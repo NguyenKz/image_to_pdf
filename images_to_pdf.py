@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 from PIL import Image, ImageOps
@@ -14,6 +15,7 @@ CONFIG_FILE = Path.home() / ".image_to_pdf_config.json"
 MODE_SPLIT_BY_PREFIX = "split_by_prefix"
 MODE_MERGE_ALL = "merge_all"
 SUPPORTED_MODES = {MODE_SPLIT_BY_PREFIX, MODE_MERGE_ALL}
+ProgressCallback = Callable[[int, int, str], None]
 
 
 def is_supported_image(path: Path) -> bool:
@@ -147,7 +149,11 @@ def summarize_input_dir(input_dir: Path, mode: str) -> str:
     )
 
 
-def load_pdf_pages(image_paths: list[Path]) -> list[Image.Image]:
+def load_pdf_pages(
+    image_paths: list[Path],
+    progress_callback: ProgressCallback | None = None,
+    progress_state: dict[str, int] | None = None,
+) -> list[Image.Image]:
     if not image_paths:
         raise FileNotFoundError("Không có ảnh để tạo PDF.")
 
@@ -165,12 +171,28 @@ def load_pdf_pages(image_paths: list[Path]) -> list[Image.Image]:
                 normalized = normalized.copy()
 
             pages.append(normalized)
+            if progress_callback is not None and progress_state is not None:
+                progress_state["current"] += 1
+                progress_callback(
+                    progress_state["current"],
+                    progress_state["total"],
+                    f"Đang xử lý ảnh: {image_path.name}",
+                )
 
     return pages
 
 
-def save_pdf(image_paths: list[Path], output_file: Path) -> None:
-    pages = load_pdf_pages(image_paths)
+def save_pdf(
+    image_paths: list[Path],
+    output_file: Path,
+    progress_callback: ProgressCallback | None = None,
+    progress_state: dict[str, int] | None = None,
+) -> None:
+    pages = load_pdf_pages(
+        image_paths,
+        progress_callback=progress_callback,
+        progress_state=progress_state,
+    )
     first_page, rest_pages = pages[0], pages[1:]
 
     output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -197,11 +219,22 @@ def resolve_merged_output_file(output_path: Path, input_dir: Path) -> Path:
     return output_path / f"{base_name}.pdf"
 
 
-def delete_images(image_paths: list[Path]) -> int:
+def delete_images(
+    image_paths: list[Path],
+    progress_callback: ProgressCallback | None = None,
+    progress_state: dict[str, int] | None = None,
+) -> int:
     deleted_count = 0
     for image_path in image_paths:
         image_path.unlink()
         deleted_count += 1
+        if progress_callback is not None and progress_state is not None:
+            progress_state["current"] += 1
+            progress_callback(
+                progress_state["current"],
+                progress_state["total"],
+                f"Đang xóa ảnh: {image_path.name}",
+            )
     return deleted_count
 
 
@@ -210,33 +243,74 @@ def build_pdfs(
     output_path: Path,
     mode: str = MODE_SPLIT_BY_PREFIX,
     delete_after_use: bool = False,
+    progress_callback: ProgressCallback | None = None,
 ) -> list[tuple[Path, int]]:
     processed_image_paths: list[Path] = []
 
     if mode == MODE_MERGE_ALL:
         image_paths = load_image_paths(input_dir)
+        total_steps = len(image_paths) + (len(image_paths) if delete_after_use else 0)
+        progress_state = {"current": 0, "total": max(total_steps, 1)}
+        if progress_callback is not None:
+            progress_callback(0, progress_state["total"], "Bắt đầu tạo PDF...")
         output_file = resolve_merged_output_file(output_path, input_dir)
-        save_pdf(image_paths, output_file)
+        save_pdf(
+            image_paths,
+            output_file,
+            progress_callback=progress_callback,
+            progress_state=progress_state,
+        )
         processed_image_paths.extend(image_paths)
         output_files = [(output_file, len(image_paths))]
         if delete_after_use:
-            delete_images(processed_image_paths)
+            delete_images(
+                processed_image_paths,
+                progress_callback=progress_callback,
+                progress_state=progress_state,
+            )
+        if progress_callback is not None:
+            progress_callback(
+                progress_state["total"],
+                progress_state["total"],
+                "Hoàn tất tạo PDF.",
+            )
         return output_files
 
     if mode != MODE_SPLIT_BY_PREFIX:
         raise ValueError(f"Chế độ không hợp lệ: {mode}")
 
     image_groups = load_image_groups(input_dir)
+    total_images = sum(len(paths) for paths in image_groups.values())
+    total_steps = total_images + (total_images if delete_after_use else 0)
+    progress_state = {"current": 0, "total": max(total_steps, 1)}
+    if progress_callback is not None:
+        progress_callback(0, progress_state["total"], "Bắt đầu tạo PDF...")
     output_files: list[tuple[Path, int]] = []
 
     for group_name, image_paths in image_groups.items():
         output_file = resolve_output_file(output_path, group_name)
-        save_pdf(image_paths, output_file)
+        save_pdf(
+            image_paths,
+            output_file,
+            progress_callback=progress_callback,
+            progress_state=progress_state,
+        )
         processed_image_paths.extend(image_paths)
         output_files.append((output_file, len(image_paths)))
 
     if delete_after_use:
-        delete_images(processed_image_paths)
+        delete_images(
+            processed_image_paths,
+            progress_callback=progress_callback,
+            progress_state=progress_state,
+        )
+
+    if progress_callback is not None:
+        progress_callback(
+            progress_state["total"],
+            progress_state["total"],
+            "Hoàn tất tạo PDF.",
+        )
 
     return output_files
 
@@ -400,18 +474,20 @@ def main() -> None:
     mode_var = tk.StringVar(value=initial_mode)
     delete_after_use_var = tk.BooleanVar(value=initial_delete_after_use)
     status_var = tk.StringVar(value="Sẵn sàng.")
+    progress_text_var = tk.StringVar(value="Chưa bắt đầu xử lý.")
 
     dir_row = ttk.Frame(control_card, style="Card.TFrame")
     dir_row.pack(fill="x")
 
     dir_entry = ttk.Entry(dir_row, textvariable=selected_dir_var, font=("Arial", 10))
     dir_entry.pack(side="left", fill="x", expand=True)
-    ttk.Button(
+    choose_dir_button = ttk.Button(
         dir_row,
         text="Chọn thư mục",
         style="Secondary.TButton",
         command=lambda: on_choose_dir(),
-    ).pack(side="left", padx=(12, 0))
+    )
+    choose_dir_button.pack(side="left", padx=(12, 0))
 
     button_row = ttk.Frame(control_card, style="Card.TFrame")
     button_row.pack(fill="x", pady=(12, 0))
@@ -433,24 +509,27 @@ def main() -> None:
     mode_row = ttk.Frame(control_card, style="Card.TFrame")
     mode_row.pack(fill="x", pady=(6, 0))
 
-    ttk.Radiobutton(
+    merge_mode_radio = ttk.Radiobutton(
         mode_row,
         text="Gộp tất cả ảnh thành 1 PDF",
         value=MODE_MERGE_ALL,
         variable=mode_var,
-    ).pack(side="left")
-    ttk.Radiobutton(
+    )
+    merge_mode_radio.pack(side="left")
+    split_mode_radio = ttk.Radiobutton(
         mode_row,
         text="Tách nhiều PDF theo tiền tố",
         value=MODE_SPLIT_BY_PREFIX,
         variable=mode_var,
-    ).pack(side="left", padx=(18, 0))
+    )
+    split_mode_radio.pack(side="left", padx=(18, 0))
 
-    ttk.Checkbutton(
+    delete_after_use_checkbox = ttk.Checkbutton(
         control_card,
         text="Xóa ảnh sau khi tạo PDF thành công",
         variable=delete_after_use_var,
-    ).pack(anchor="w", pady=(12, 0))
+    )
+    delete_after_use_checkbox.pack(anchor="w", pady=(12, 0))
 
     results_card = ttk.Frame(frame, padding=18, style="Card.TFrame")
     results_card.pack(fill="both", expand=True, pady=(16, 0))
@@ -479,9 +558,40 @@ def main() -> None:
     result_box.pack(fill="both", expand=True)
     result_box.configure(state="disabled")
 
+    progress_row = ttk.Frame(results_card, style="Card.TFrame")
+    progress_row.pack(fill="x", pady=(12, 0))
+    progress_bar = ttk.Progressbar(progress_row, mode="determinate", maximum=100, value=0)
+    progress_bar.pack(fill="x")
+    ttk.Label(
+        progress_row,
+        textvariable=progress_text_var,
+        style="Body.TLabel",
+        wraplength=780,
+        justify="left",
+    ).pack(anchor="w", pady=(6, 0))
+
     status_row = ttk.Frame(results_card, style="Card.TFrame")
     status_row.pack(fill="x", pady=(12, 0))
     ttk.Label(status_row, textvariable=status_var, style="Status.TLabel").pack(anchor="w")
+
+    def set_controls_enabled(enabled: bool) -> None:
+        state = "!disabled" if enabled else "disabled"
+        for widget in (
+            dir_entry,
+            choose_dir_button,
+            merge_mode_radio,
+            split_mode_radio,
+            delete_after_use_checkbox,
+            create_button,
+        ):
+            widget.state([state] if enabled else ["disabled"])
+
+    def update_progress(current: int, total: int, message: str) -> None:
+        total_value = max(total, 1)
+        progress_bar.configure(maximum=total_value)
+        progress_bar["value"] = min(current, total_value)
+        progress_text_var.set(f"{message} ({min(current, total_value)}/{total_value})")
+        root.update()
 
     def set_result(
         message: str, *, is_error: bool = False, status_message: str | None = None
@@ -529,6 +639,8 @@ def main() -> None:
 
         try:
             status_var.set("Đang tạo PDF...")
+            update_progress(0, 1, "Đang chuẩn bị xử lý...")
+            set_controls_enabled(False)
             root.update_idletasks()
             save_last_input_dir(input_dir)
             save_last_mode(selected_mode)
@@ -538,8 +650,10 @@ def main() -> None:
                 args.output,
                 selected_mode,
                 delete_after_use=delete_after_use,
+                progress_callback=update_progress,
             )
         except Exception as exc:
+            set_controls_enabled(True)
             set_result(str(exc), is_error=True)
             return
 
@@ -567,13 +681,15 @@ def main() -> None:
             f"{deleted_summary}"
             f"Chi tiết:\n{details}"
         )
+        set_controls_enabled(True)
 
-    ttk.Button(
+    create_button = ttk.Button(
         button_row,
         text="Tạo PDF",
         style="Primary.TButton",
         command=on_build_pdfs,
-    ).pack(side="left")
+    )
+    create_button.pack(side="left")
     ttk.Button(
         button_row,
         text="Đóng",
@@ -595,6 +711,8 @@ def main() -> None:
             "Chào bạn.\n\nHãy chọn thư mục chứa ảnh, chọn chế độ xuất rồi nhấn “Tạo PDF”.",
             status_message="Sẵn sàng.",
         )
+
+    progress_text_var.set("Chưa bắt đầu xử lý.")
 
     if startup_error:
         set_result(startup_error, is_error=True)
