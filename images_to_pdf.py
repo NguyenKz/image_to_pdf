@@ -3,8 +3,10 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import threading
 from collections.abc import Callable
 from pathlib import Path
+from queue import Empty, Queue
 
 from PIL import Image, ImageOps
 
@@ -475,6 +477,8 @@ def main() -> None:
     delete_after_use_var = tk.BooleanVar(value=initial_delete_after_use)
     status_var = tk.StringVar(value="Sẵn sàng.")
     progress_text_var = tk.StringVar(value="Chưa bắt đầu xử lý.")
+    worker_queue: Queue[tuple[str, object]] = Queue()
+    is_processing = False
 
     dir_row = ttk.Frame(control_card, style="Card.TFrame")
     dir_row.pack(fill="x")
@@ -591,7 +595,65 @@ def main() -> None:
         progress_bar.configure(maximum=total_value)
         progress_bar["value"] = min(current, total_value)
         progress_text_var.set(f"{message} ({min(current, total_value)}/{total_value})")
-        root.update()
+
+    def handle_build_success(
+        input_dir: Path,
+        selected_mode: str,
+        delete_after_use: bool,
+        output_files: list[tuple[Path, int]],
+    ) -> None:
+        total_files = len(output_files)
+        total_images = sum(image_count for _, image_count in output_files)
+        mode_text = (
+            "Gộp tất cả ảnh thành 1 PDF"
+            if selected_mode == MODE_MERGE_ALL
+            else "Tách nhiều PDF theo tiền tố"
+        )
+        delete_text = "Có" if delete_after_use else "Không"
+        deleted_summary = f"Số ảnh đã xóa: {total_images}\n\n" if delete_after_use else ""
+        details = "\n".join(
+            f"- {output_file.name}: {image_count} ảnh\n  {output_file}"
+            for output_file, image_count in output_files
+        )
+        set_result(
+            f"Tạo PDF thành công.\n\n"
+            f"Thư mục nguồn: {input_dir}\n"
+            f"Thư mục output: {resolve_output_dir(args.output).resolve()}\n"
+            f"Chế độ xuất: {mode_text}\n"
+            f"Xóa ảnh sau khi tạo PDF: {delete_text}\n"
+            f"Số file PDF đã tạo: {total_files}\n"
+            f"Tổng số ảnh đã xử lý: {total_images}\n\n"
+            f"{deleted_summary}"
+            f"Chi tiết:\n{details}"
+        )
+
+    def poll_worker_queue() -> None:
+        nonlocal is_processing
+        should_continue_polling = is_processing
+
+        while True:
+            try:
+                event_type, payload = worker_queue.get_nowait()
+            except Empty:
+                break
+
+            if event_type == "progress":
+                current, total, message = payload
+                update_progress(current, total, message)
+            elif event_type == "success":
+                input_dir, selected_mode, delete_after_use, output_files = payload
+                handle_build_success(input_dir, selected_mode, delete_after_use, output_files)
+                set_controls_enabled(True)
+                is_processing = False
+                should_continue_polling = False
+            elif event_type == "error":
+                set_result(str(payload), is_error=True)
+                set_controls_enabled(True)
+                is_processing = False
+                should_continue_polling = False
+
+        if should_continue_polling:
+            root.after(50, poll_worker_queue)
 
     def set_result(
         message: str, *, is_error: bool = False, status_message: str | None = None
@@ -625,9 +687,12 @@ def main() -> None:
             set_result(str(exc), is_error=True, status_message="Có lỗi xảy ra.")
 
     def on_build_pdfs() -> None:
+        nonlocal is_processing
         raw_dir = selected_dir_var.get().strip()
         selected_mode = mode_var.get()
         delete_after_use = delete_after_use_var.get()
+        if is_processing:
+            return
         if not raw_dir:
             set_result("Bạn chưa chọn thư mục ảnh.\nHãy bấm “Chọn thư mục” để tiếp tục.", is_error=True)
             return
@@ -637,51 +702,34 @@ def main() -> None:
             set_result(f"Thư mục không tồn tại:\n{input_dir}", is_error=True)
             return
 
-        try:
-            status_var.set("Đang tạo PDF...")
-            update_progress(0, 1, "Đang chuẩn bị xử lý...")
-            set_controls_enabled(False)
-            root.update_idletasks()
-            save_last_input_dir(input_dir)
-            save_last_mode(selected_mode)
-            save_delete_after_use(delete_after_use)
-            output_files = build_pdfs(
-                input_dir,
-                args.output,
-                selected_mode,
-                delete_after_use=delete_after_use,
-                progress_callback=update_progress,
-            )
-        except Exception as exc:
-            set_controls_enabled(True)
-            set_result(str(exc), is_error=True)
-            return
+        status_var.set("Đang tạo PDF...")
+        update_progress(0, 1, "Đang chuẩn bị xử lý...")
+        set_controls_enabled(False)
+        is_processing = True
+        save_last_input_dir(input_dir)
+        save_last_mode(selected_mode)
+        save_delete_after_use(delete_after_use)
 
-        total_files = len(output_files)
-        total_images = sum(image_count for _, image_count in output_files)
-        mode_text = (
-            "Gộp tất cả ảnh thành 1 PDF"
-            if selected_mode == MODE_MERGE_ALL
-            else "Tách nhiều PDF theo tiền tố"
-        )
-        delete_text = "Có" if delete_after_use else "Không"
-        deleted_summary = f"Số ảnh đã xóa: {total_images}\n\n" if delete_after_use else ""
-        details = "\n".join(
-            f"- {output_file.name}: {image_count} ảnh\n  {output_file}"
-            for output_file, image_count in output_files
-        )
-        set_result(
-            f"Tạo PDF thành công.\n\n"
-            f"Thư mục nguồn: {input_dir}\n"
-            f"Thư mục output: {resolve_output_dir(args.output).resolve()}\n"
-            f"Chế độ xuất: {mode_text}\n"
-            f"Xóa ảnh sau khi tạo PDF: {delete_text}\n"
-            f"Số file PDF đã tạo: {total_files}\n"
-            f"Tổng số ảnh đã xử lý: {total_images}\n\n"
-            f"{deleted_summary}"
-            f"Chi tiết:\n{details}"
-        )
-        set_controls_enabled(True)
+        def queue_progress(current: int, total: int, message: str) -> None:
+            worker_queue.put(("progress", (current, total, message)))
+
+        def run_build() -> None:
+            try:
+                output_files = build_pdfs(
+                    input_dir,
+                    args.output,
+                    selected_mode,
+                    delete_after_use=delete_after_use,
+                    progress_callback=queue_progress,
+                )
+                worker_queue.put(
+                    ("success", (input_dir, selected_mode, delete_after_use, output_files))
+                )
+            except Exception as exc:
+                worker_queue.put(("error", exc))
+
+        threading.Thread(target=run_build, daemon=True).start()
+        root.after(50, poll_worker_queue)
 
     create_button = ttk.Button(
         button_row,
