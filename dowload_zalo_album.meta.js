@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zalo Chat XPath Image Downloader
 // @namespace    https://chat.zalo.me/
-// @version      1.0.1
+// @version      1.0.2
 // @description  Nhap XPath, dem anh va tai anh theo thu tu tren Zalo Chat
 // @author       GPT
 // @match        https://chat.zalo.me/*
