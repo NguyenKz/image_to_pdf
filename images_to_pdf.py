@@ -130,6 +130,23 @@ def load_image_groups(input_dir: Path) -> dict[str, list[Path]]:
     return groups
 
 
+def summarize_input_dir(input_dir: Path, mode: str) -> str:
+    image_paths = load_image_paths(input_dir)
+    group_count = len({get_image_group(path) for path in image_paths})
+    mode_text = (
+        "Gộp tất cả ảnh thành 1 PDF"
+        if mode == MODE_MERGE_ALL
+        else "Tách nhiều PDF theo tiền tố"
+    )
+    return (
+        f"Đã chọn thư mục:\n{input_dir}\n\n"
+        f"Số ảnh hợp lệ tìm được: {len(image_paths)}\n"
+        f"Số nhóm theo tiền tố: {group_count}\n"
+        f"Chế độ hiện tại: {mode_text}\n\n"
+        "Nhấn “Tạo PDF” để bắt đầu."
+    )
+
+
 def load_pdf_pages(image_paths: list[Path]) -> list[Image.Image]:
     if not image_paths:
         raise FileNotFoundError("Không có ảnh để tạo PDF.")
@@ -489,7 +506,13 @@ def main() -> None:
 
         selected_dir_var.set(str(selected_dir))
         save_last_input_dir(selected_dir)
-        status_var.set("Đã cập nhật thư mục ảnh.")
+        try:
+            set_result(
+                summarize_input_dir(selected_dir, mode_var.get()),
+                status_message="Đã cập nhật thư mục ảnh.",
+            )
+        except Exception as exc:
+            set_result(str(exc), is_error=True, status_message="Có lỗi xảy ra.")
 
     def on_build_pdfs() -> None:
         raw_dir = selected_dir_var.get().strip()
@@ -559,15 +582,14 @@ def main() -> None:
     ).pack(side="right")
 
     if initial_input_dir is not None:
-        set_result(
-            "Ứng dụng đã sẵn sàng.\n\n"
-            f"Thư mục đang chọn:\n{initial_input_dir}\n\n"
-            f"Chế độ hiện tại: "
-            f"{'Gộp tất cả ảnh thành 1 PDF' if initial_mode == MODE_MERGE_ALL else 'Tách nhiều PDF theo tiền tố'}\n"
-            f"Xóa ảnh sau khi tạo PDF: {'Có' if initial_delete_after_use else 'Không'}\n\n"
-            "Nhấn “Tạo PDF” để bắt đầu, hoặc “Chọn thư mục” để đổi thư mục khác.",
-            status_message="Sẵn sàng.",
-        )
+        try:
+            set_result(
+                summarize_input_dir(initial_input_dir, initial_mode)
+                + f"\nXóa ảnh sau khi tạo PDF: {'Có' if initial_delete_after_use else 'Không'}",
+                status_message="Sẵn sàng.",
+            )
+        except Exception as exc:
+            set_result(str(exc), is_error=True, status_message="Có lỗi xảy ra.")
     else:
         set_result(
             "Chào bạn.\n\nHãy chọn thư mục chứa ảnh, chọn chế độ xuất rồi nhấn “Tạo PDF”.",
