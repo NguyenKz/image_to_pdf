@@ -202,21 +202,21 @@ def save_pdf(
         page.close()
 
 
-def resolve_output_file(output_path: Path, group_name: str) -> Path:
+def resolve_output_file(output_path: Path, group_name: str, image_count: int) -> Path:
     output_dir = output_path.parent if output_path.suffix.lower() == ".pdf" else output_path
-    return output_dir / f"{group_name}.pdf"
+    return output_dir / f"{group_name} ({image_count}).pdf"
 
 
 def resolve_output_dir(output_path: Path) -> Path:
     return output_path.parent if output_path.suffix.lower() == ".pdf" else output_path
 
 
-def resolve_merged_output_file(output_path: Path, input_dir: Path) -> Path:
+def resolve_merged_output_file(output_path: Path, input_dir: Path, image_count: int) -> Path:
     if output_path.suffix.lower() == ".pdf":
-        return output_path
+        return output_path.with_name(f"{output_path.stem} ({image_count}).pdf")
 
     base_name = input_dir.name.strip() or "merged_images"
-    return output_path / f"{base_name}.pdf"
+    return output_path / f"{base_name} ({image_count}).pdf"
 
 
 def delete_images(
@@ -253,7 +253,7 @@ def build_pdfs(
         progress_state = {"current": 0, "total": max(total_steps, 1)}
         if progress_callback is not None:
             progress_callback(0, progress_state["total"], "Bắt đầu tạo PDF...")
-        output_file = resolve_merged_output_file(output_path, input_dir)
+        output_file = resolve_merged_output_file(output_path, input_dir, len(image_paths))
         save_pdf(
             image_paths,
             output_file,
@@ -288,7 +288,7 @@ def build_pdfs(
     output_files: list[tuple[Path, int]] = []
 
     for group_name, image_paths in image_groups.items():
-        output_file = resolve_output_file(output_path, group_name)
+        output_file = resolve_output_file(output_path, group_name, len(image_paths))
         save_pdf(
             image_paths,
             output_file,
