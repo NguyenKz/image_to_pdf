@@ -3,12 +3,39 @@ from __future__ import annotations
 import argparse
 from datetime import datetime
 import json
+import os
 import re
 import subprocess
+import sys
 import threading
 from collections.abc import Callable
 from pathlib import Path
 from queue import Empty, Queue
+
+
+def configure_bundled_tk() -> None:
+    if not getattr(sys, "frozen", False):
+        return
+
+    bundled_lib_dir = Path(sys.executable).resolve().parent.parent / "lib"
+
+    tcl_dir = next(
+        (path for path in sorted(bundled_lib_dir.glob("tcl8*")) if path.is_dir()),
+        None,
+    )
+    tk_dir = next(
+        (path for path in sorted(bundled_lib_dir.glob("tk8*")) if path.is_dir()),
+        None,
+    )
+
+    if tcl_dir is not None:
+        os.environ.setdefault("TCL_LIBRARY", str(tcl_dir))
+    if tk_dir is not None:
+        os.environ.setdefault("TK_LIBRARY", str(tk_dir))
+
+
+configure_bundled_tk()
+
 import tkinter as tk
 from tkinter import filedialog, scrolledtext, ttk
 
