@@ -30,5 +30,10 @@
 1. [Download App](https://github.com/NguyenKz/image_to_pdf/blob/main/releases/App.zip)
 2. Click "Download" Download ![Download](./images/download_app.png)
 3. Unzip the file ![Unzip](./images/unzip.png)
-4. Run the app
+4. Open terminal and run ( command+space -> type `terminal` -> enter ![Terminal](./images/terminal.png))
+   ```bash
+   /usr/bin/xattr -dr com.apple.quarantine ~/Downloads/ImageToPDF.app
+   ```
+   ![Run](./images/verify_app.png)
+   - **Note: Replace `~/Downloads/ImageToPDF.app` with the path to the app you downloaded.**
 5. Done
