@@ -14,7 +14,7 @@ OPTIONS = {
     "plist": {
         "CFBundleDisplayName": "Image to PDF",
         "CFBundleIdentifier": "me.nguyenkz.image-to-pdf",
-        "CFBundleName": "Image to PDF",
+        "CFBundleName": "ImageToPDF",
         "CFBundleShortVersionString": "1.0.0",
         "CFBundleVersion": "1.0.0",
         "LSMinimumSystemVersion": "12.0",
@@ -23,6 +23,7 @@ OPTIONS = {
 
 
 setup(
+    name="ImageToPDF",
     app=APP,
     options={"py2app": OPTIONS},
     setup_requires=["py2app"],

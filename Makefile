@@ -1,6 +1,6 @@
 .PHONY: release relase build zip copy-release clean-release
 
-APP_NAME := Image to PDF.app
+APP_NAME := ImageToPDF.app
 DIST_DIR := dist
 APP_PATH := $(DIST_DIR)/$(APP_NAME)
 ZIP_NAME := App.zip
@@ -23,6 +23,7 @@ release: clean-release build zip copy-release
 relase: release
 
 build:
+	rm -rf "$(APP_PATH)" "$(DIST_DIR)/Image to PDF.app"
 	$(PYTHON) setup.py py2app
 
 zip:
