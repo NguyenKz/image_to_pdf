@@ -9,6 +9,8 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 from queue import Empty, Queue
+import tkinter as tk
+from tkinter import filedialog, scrolledtext, ttk
 
 from PIL import Image, ImageOps
 
@@ -111,12 +113,40 @@ def save_last_output_name(output_name: str) -> None:
     save_app_config(config)
 
 
-def choose_input_dir(parent: object, initial_dir: Path | None) -> Path | None:
-    from tkinter import filedialog
+def load_last_output_dir() -> Path | None:
+    config = load_app_config()
 
+    output_dir = config.get("last_output_dir")
+    if not output_dir:
+        return None
+
+    path = Path(output_dir).expanduser()
+    return path if path.exists() and path.is_dir() else None
+
+
+def save_last_output_dir(output_dir: Path) -> None:
+    config = load_app_config()
+    config["last_output_dir"] = str(output_dir.resolve())
+    save_app_config(config)
+
+
+def choose_input_dir(parent: object, initial_dir: Path | None) -> Path | None:
     selected_dir = filedialog.askdirectory(
         parent=parent,
         title="Chọn thư mục chứa ảnh",
+        initialdir=str(initial_dir) if initial_dir else str(Path.cwd()),
+    )
+
+    if not selected_dir:
+        return None
+
+    return Path(selected_dir)
+
+
+def choose_output_dir(parent: object, initial_dir: Path | None) -> Path | None:
+    selected_dir = filedialog.askdirectory(
+        parent=parent,
+        title="Chọn thư mục output",
         initialdir=str(initial_dir) if initial_dir else str(Path.cwd()),
     )
 
@@ -490,15 +520,20 @@ def resolve_initial_output_name(output_name: str) -> str:
     return output_name if output_name else load_last_output_name()
 
 
-def main() -> None:
-    import tkinter as tk
-    from tkinter import scrolledtext, ttk
+def resolve_initial_output_dir(output_path: Path) -> Path:
+    saved_output_dir = load_last_output_dir()
+    if saved_output_dir is not None:
+        return saved_output_dir
+    return resolve_output_dir(output_path).expanduser().resolve()
 
+
+def main() -> None:
     args = parse_args()
     startup_error: str | None = None
     initial_mode = resolve_initial_mode(args.mode)
     initial_delete_after_use = resolve_initial_delete_after_use(args.delete_after_use)
     initial_output_name = resolve_initial_output_name(args.output_name)
+    initial_output_dir = resolve_initial_output_dir(args.output)
 
     try:
         initial_input_dir = resolve_initial_input_dir(args.input_dir)
@@ -654,7 +689,7 @@ def main() -> None:
     ).grid(row=1, column=0, sticky="w", pady=(4, 14))
 
     selected_dir_var = tk.StringVar(value=str(initial_input_dir) if initial_input_dir else "")
-    output_dir_var = tk.StringVar(value=str(resolve_output_dir(args.output).resolve()))
+    output_dir_var = tk.StringVar(value=str(initial_output_dir))
     output_name_var = tk.StringVar(value=initial_output_name)
     mode_var = tk.StringVar(value=initial_mode)
     delete_after_use_var = tk.BooleanVar(value=initial_delete_after_use)
@@ -694,27 +729,34 @@ def main() -> None:
     output_row = ttk.Frame(source_card, style="Card.TFrame")
     output_row.grid(row=5, column=0, sticky="ew", pady=(6, 12))
     output_row.columnconfigure(0, weight=1)
-    ttk.Label(
+    output_entry = ttk.Entry(
         output_row,
         textvariable=output_dir_var,
-        style="Body.TLabel",
-        wraplength=520,
-        justify="left",
-    ).grid(row=0, column=0, sticky="w")
+        font=("Arial", 10),
+        style="Modern.TEntry",
+    )
+    output_entry.grid(row=0, column=0, sticky="ew")
+    choose_output_button = ttk.Button(
+        output_row,
+        text="Chọn thư mục",
+        style="Secondary.TButton",
+        command=lambda: on_choose_output_dir(),
+    )
+    choose_output_button.grid(row=0, column=1, padx=(12, 0))
     open_output_button = ttk.Button(
         output_row,
         text="Mở thư mục",
         style="Secondary.TButton",
         command=lambda: on_open_output_dir(),
     )
-    open_output_button.grid(row=0, column=1, padx=(12, 0))
+    open_output_button.grid(row=0, column=2, padx=(12, 0))
     ttk.Label(
         output_row,
         textvariable=output_file_preview_var,
         style="Body.TLabel",
         wraplength=520,
         justify="left",
-    ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
+    ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(8, 0))
 
     ttk.Label(source_card, text="Tên file output", style="Section.TLabel").grid(
         row=6, column=0, sticky="w"
@@ -866,6 +908,8 @@ def main() -> None:
         for widget in (
             dir_entry,
             choose_dir_button,
+            output_entry,
+            choose_output_button,
             open_output_button,
             merge_mode_radio,
             split_mode_radio,
@@ -917,6 +961,7 @@ def main() -> None:
 
     def handle_build_success(
         input_dir: Path,
+        output_dir: Path,
         selected_mode: str,
         delete_after_use: bool,
         output_files: list[tuple[Path, int]],
@@ -937,7 +982,7 @@ def main() -> None:
         set_result(
             f"Tạo PDF thành công.\n\n"
             f"Thư mục nguồn: {input_dir}\n"
-            f"Thư mục output: {resolve_output_dir(args.output).resolve()}\n"
+            f"Thư mục output: {output_dir}\n"
             f"Chế độ xuất: {mode_text}\n"
             f"Xóa ảnh sau khi tạo PDF: {delete_text}\n"
             f"Số file PDF đã tạo: {total_files}\n"
@@ -960,9 +1005,15 @@ def main() -> None:
                 current, total, message = payload
                 update_progress(current, total, message)
             elif event_type == "success":
-                input_dir, selected_mode, delete_after_use, output_files = payload
+                input_dir, output_dir, selected_mode, delete_after_use, output_files = payload
                 finish_progress("Hoàn tất xử lý.")
-                handle_build_success(input_dir, selected_mode, delete_after_use, output_files)
+                handle_build_success(
+                    input_dir,
+                    output_dir,
+                    selected_mode,
+                    delete_after_use,
+                    output_files,
+                )
                 set_controls_enabled(True)
                 is_processing = False
                 should_continue_polling = False
@@ -1008,17 +1059,38 @@ def main() -> None:
             set_result(str(exc), is_error=True, status_message="Có lỗi xảy ra.")
 
     def on_open_output_dir() -> None:
-        output_dir = resolve_output_dir(args.output).expanduser().resolve()
+        raw_output_dir = output_dir_var.get().strip()
+        if not raw_output_dir:
+            set_result(
+                "Bạn chưa chọn thư mục output.\nHãy chọn thư mục output để tiếp tục.",
+                is_error=True,
+            )
+            return
+
+        output_dir = Path(raw_output_dir).expanduser().resolve()
         try:
             output_dir.mkdir(parents=True, exist_ok=True)
             subprocess.Popen(["open", str(output_dir)])
+            save_last_output_dir(output_dir)
             status_var.set("Đã mở thư mục output.")
         except Exception as exc:
             set_result(f"Không thể mở thư mục output:\n{exc}", is_error=True)
 
+    def on_choose_output_dir() -> None:
+        current_dir = Path(output_dir_var.get()).expanduser() if output_dir_var.get() else None
+        selected_output_dir = choose_output_dir(root, current_dir or load_last_output_dir())
+        if selected_output_dir is None:
+            return
+
+        resolved_output_dir = selected_output_dir.resolve()
+        output_dir_var.set(str(resolved_output_dir))
+        save_last_output_dir(resolved_output_dir)
+        status_var.set("Đã cập nhật thư mục output.")
+
     def on_build_pdfs() -> None:
         nonlocal is_processing
         raw_dir = selected_dir_var.get().strip()
+        raw_output_dir = output_dir_var.get().strip()
         custom_output_name = output_name_var.get().strip()
         selected_mode = mode_var.get()
         delete_after_use = delete_after_use_var.get()
@@ -1027,17 +1099,27 @@ def main() -> None:
         if not raw_dir:
             set_result("Bạn chưa chọn thư mục ảnh.\nHãy bấm “Chọn thư mục” để tiếp tục.", is_error=True)
             return
+        if not raw_output_dir:
+            set_result(
+                "Bạn chưa chọn thư mục output.\nHãy bấm “Chọn thư mục” ở phần output để tiếp tục.",
+                is_error=True,
+            )
+            return
 
         input_dir = Path(raw_dir).expanduser()
         if not input_dir.exists() or not input_dir.is_dir():
             set_result(f"Thư mục không tồn tại:\n{input_dir}", is_error=True)
             return
 
+        output_dir = Path(raw_output_dir).expanduser()
+        output_path = output_dir.resolve()
+
         status_var.set("Đang tạo PDF...")
         start_progress("Đang chuẩn bị xử lý...")
         set_controls_enabled(False)
         is_processing = True
         save_last_input_dir(input_dir)
+        save_last_output_dir(output_path)
         save_last_mode(selected_mode)
         save_delete_after_use(delete_after_use)
         save_last_output_name(custom_output_name)
@@ -1049,14 +1131,14 @@ def main() -> None:
             try:
                 output_files = build_pdfs(
                     input_dir,
-                    args.output,
+                    output_path,
                     selected_mode,
                     delete_after_use=delete_after_use,
                     progress_callback=queue_progress,
                     custom_output_name=custom_output_name,
                 )
                 worker_queue.put(
-                    ("success", (input_dir, selected_mode, delete_after_use, output_files))
+                    ("success", (input_dir, output_path, selected_mode, delete_after_use, output_files))
                 )
             except Exception as exc:
                 worker_queue.put(("error", exc))

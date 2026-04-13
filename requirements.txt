@@ -1,1 +1,2 @@
 Pillow
+py2app
