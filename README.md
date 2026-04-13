@@ -40,4 +40,5 @@
 ![Run](./images/verify_app.png)
    - **Note: Replace `~/Downloads/ImageToPDF.app` with the path to the app you downloaded.**
 
-6. Done
+6. Press Enter
+8. Done
