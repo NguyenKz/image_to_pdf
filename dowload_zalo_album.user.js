@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zalo Chat XPath Image Downloader
 // @namespace    https://chat.zalo.me/
-// @version      1.0.3
+// @version      1.0.4
 // @description  Nhap XPath, dem anh va tai anh theo thu tu tren Zalo Chat
 // @author       GPT
 // @match        https://chat.zalo.me/*
@@ -243,7 +243,7 @@
       await sleep(intervalMs);
     }
 
-    throw new Error("Het thoi gian cho doi doi tuong full image");
+      throw new Error("Hết thời gian chờ ảnh gốc hiển thị");
   }
 
   async function waitForViewerImageByBaseId(baseId, timeoutMs = 8000) {
@@ -279,11 +279,11 @@
 
   async function openFullImageFromThumbnail(image) {
     if (!image.thumbNode) {
-      throw new Error("Khong tim thay thumbnail de mo full image");
+      throw new Error("Không tìm thấy ảnh thu nhỏ để mở ảnh gốc");
     }
 
     if (!image.baseId) {
-      throw new Error("Khong tim thay img-id cua thumbnail");
+      throw new Error("Không tìm thấy ID của ảnh thu nhỏ");
     }
 
     image.thumbNode.click();
@@ -304,7 +304,7 @@
       try {
         const response = await fetch(url);
         if (!response.ok) {
-          throw new Error(`Cannot download: ${url}`);
+          throw new Error(`Không thể tải ảnh từ: ${url}`);
         }
         return response.blob();
       } catch (error) {
@@ -312,7 +312,7 @@
       }
     }
 
-    throw lastError || new Error("Khong tai duoc anh");
+    throw lastError || new Error("Không tải được ảnh");
   }
 
   async function downloadImage(image) {
@@ -343,7 +343,7 @@
       };
       img.onerror = () => {
         URL.revokeObjectURL(objectUrl);
-        reject(new Error("Khong mo duoc anh de tao PDF"));
+        reject(new Error("Không mở được ảnh để tạo PDF"));
       };
       img.src = objectUrl;
     });
@@ -359,7 +359,7 @@
 
     const context = canvas.getContext("2d");
     if (!context) {
-      throw new Error("Khong tao duoc canvas de tao PDF");
+      throw new Error("Không tạo được canvas để xuất PDF");
     }
 
     context.fillStyle = "#ffffff";
@@ -394,7 +394,7 @@
     if (existingCtor) {
       return existingCtor;
     }
-    throw new Error("Khong tim thay jsPDF tu @require trong Tampermonkey");
+    throw new Error("Không tìm thấy jsPDF từ @require trong Tampermonkey");
   }
 
   async function downloadPdfFromImages(images, timestamp, albumIndex, onProgress = null) {
@@ -429,7 +429,7 @@
     }
 
     if (!pdf) {
-      throw new Error("Khong co anh de tao PDF");
+      throw new Error("Không có ảnh để tạo PDF");
     }
 
     pdf.save(buildPdfFileName(timestamp, albumIndex));
@@ -777,7 +777,7 @@
     try {
       return typeof window.$x === "function" ? window.$x(xpath) : evaluateXPath(xpath);
     } catch (error) {
-      throw new Error(`XPath khong hop le: ${error.message}`);
+      throw new Error(`XPath không hợp lệ: ${error.message}`);
     }
   }
 
@@ -833,26 +833,26 @@
 
     const refreshButton = document.createElement("button");
     refreshButton.id = PANEL_ID;
-    refreshButton.textContent = "Lam moi";
-    refreshButton.title = "Lam moi de quet lai cac album dang duoc load";
+    refreshButton.textContent = "Làm mới";
+    refreshButton.title = "Quét lại các album đang hiển thị";
 
     const queueButton = document.createElement("button");
     queueButton.id = QUEUE_BUTTON_ID;
-    queueButton.textContent = "Tai da chon";
-    queueButton.title = "Chon album roi bam de tai theo thu tu da chon";
+    queueButton.textContent = "Tải đã chọn";
+    queueButton.title = "Tải các album theo đúng thứ tự đã chọn";
 
     const retryButton = document.createElement("button");
     retryButton.id = RETRY_BUTTON_ID;
     retryButton.hidden = true;
-    retryButton.textContent = "Thu lai failed";
-    retryButton.title = "Khong co anh failed de thu lai";
+    retryButton.textContent = "Tải lại ảnh lỗi";
+    retryButton.title = "Chưa có ảnh lỗi để tải lại";
 
     const progressPanel = document.createElement("div");
     progressPanel.id = PROGRESS_PANEL_ID;
     progressPanel.hidden = true;
     progressPanel.innerHTML = `
-      <div class="tm-zalo-progress-title">Dang cho thao tac</div>
-      <div class="tm-zalo-progress-detail">Chua co tien trinh nao.</div>
+      <div class="tm-zalo-progress-title">Đang chờ thao tác</div>
+      <div class="tm-zalo-progress-detail">Chưa có tiến trình nào.</div>
       <div class="tm-zalo-progress-meta">
         <span class="tm-zalo-progress-count">0/0</span>
         <span class="tm-zalo-progress-percent">0%</span>
@@ -926,15 +926,15 @@
       retryButton.disabled = isQueueDownloading || failedCount === 0;
 
       if (!failedCount) {
-        retryButton.textContent = "Thu lai failed";
-        retryButton.title = "Khong co anh failed de thu lai";
+        retryButton.textContent = "Tải lại ảnh lỗi";
+        retryButton.title = "Chưa có ảnh lỗi để tải lại";
         return;
       }
 
-      retryButton.textContent = `Thu lai failed (${failedCount})`;
+      retryButton.textContent = `Tải lại ảnh lỗi (${failedCount})`;
       retryButton.title = failedSessionLabel
-        ? `Thu lai ${failedCount} anh failed cua ${failedSessionLabel}`
-        : `Thu lai ${failedCount} anh failed`;
+        ? `Tải lại ${failedCount} ảnh lỗi của ${failedSessionLabel}`
+        : `Tải lại ${failedCount} ảnh lỗi`;
     }
 
     function resetFailedDownloads(sessionLabel = "") {
@@ -984,9 +984,9 @@
     function syncRefreshButtonState() {
       refreshButton.disabled = isQueueDownloading;
       if (isQueueDownloading) {
-        refreshButton.title = "Dang tai hang doi album, tam khoa Lam moi";
-      } else if (refreshButton.textContent === "Lam moi") {
-        refreshButton.title = "Lam moi de quet lai cac album dang duoc load";
+        refreshButton.title = "Đang tải hàng đợi album, tạm khóa nút Làm mới";
+      } else if (refreshButton.textContent === "Làm mới") {
+        refreshButton.title = "Quét lại các album đang hiển thị";
       }
     }
 
@@ -995,18 +995,18 @@
       queueButton.disabled = isQueueDownloading || selectedCount === 0;
 
       if (isQueueDownloading) {
-        queueButton.title = "Dang tai hang doi album";
+        queueButton.title = "Đang tải hàng đợi album";
         return;
       }
 
       if (!selectedCount) {
-        queueButton.textContent = "Tai da chon";
-        queueButton.title = "Chon album roi bam de tai theo thu tu da chon";
+        queueButton.textContent = "Tải đã chọn";
+        queueButton.title = "Tải các album theo đúng thứ tự đã chọn";
         return;
       }
 
-      queueButton.textContent = `Tai da chon (${selectedCount})`;
-      queueButton.title = `Tai ${selectedCount} album theo thu tu da chon`;
+      queueButton.textContent = `Tải đã chọn (${selectedCount})`;
+      queueButton.title = `Tải ${selectedCount} album theo đúng thứ tự đã chọn`;
     }
 
     function trimSelectedAlbums(albums) {
@@ -1024,10 +1024,10 @@
         const selectionOrder = selectedAlbumIndexes.indexOf(album.index) + 1;
         const isSelected = selectionOrder > 0;
 
-        controls.selectButton.textContent = isSelected ? `Chon #${selectionOrder}` : "Chon";
+        controls.selectButton.textContent = isSelected ? `Đã chọn #${selectionOrder}` : "Chọn";
         controls.selectButton.title = isSelected
-          ? `Bo chon album ${album.index}`
-          : `Chon album ${album.index} vao hang doi tai`;
+          ? `Bỏ chọn album ${album.index}`
+          : `Chọn album ${album.index} vào hàng đợi tải`;
         controls.selectButton.disabled = isQueueDownloading;
         controls.selectButton.classList.toggle("is-selected", isSelected);
 
@@ -1051,10 +1051,10 @@
       const selectedIndex = selectedAlbumIndexes.indexOf(albumIndex);
       if (selectedIndex >= 0) {
         selectedAlbumIndexes.splice(selectedIndex, 1);
-        writeLog(`Bo chon album ${albumIndex}.`);
+        writeLog(`Bỏ chọn album ${albumIndex}.`);
       } else {
         selectedAlbumIndexes.push(albumIndex);
-        writeLog(`Da chon album ${albumIndex} o vi tri ${selectedAlbumIndexes.length}.`);
+        writeLog(`Đã chọn album ${albumIndex} ở vị trí ${selectedAlbumIndexes.length}.`);
       }
 
       updateAlbumControls();
@@ -1065,25 +1065,25 @@
         clearTimeout(labelResetTimer);
       }
 
-      setRefreshLabel(`${albumCount} album • ${imageCount} anh`, "Da quet xong");
-      showToast(`Da quet xong ${albumCount} album, ${imageCount} anh.`, "success", 2200);
+      setRefreshLabel(`${albumCount} album • ${imageCount} ảnh`, "Đã quét xong");
+      showToast(`Đã quét xong ${albumCount} album, tổng cộng ${imageCount} ảnh.`, "success", 2200);
 
       labelResetTimer = setTimeout(() => {
-        setRefreshLabel("Lam moi", "Lam moi de quet lai cac album dang duoc load");
+        setRefreshLabel("Làm mới", "Quét lại các album đang hiển thị");
       }, 2200);
     }
 
     async function resolveFreshAlbum(albumIndex) {
       const xpath = DEFAULT_ALBUM_XPATH;
       if (!xpath) {
-        throw new Error("Chua nhap XPath.");
+        throw new Error("Chưa có XPath.");
       }
 
       await sleep(400);
 
       const result = getFreshAlbum(xpath, albumIndex);
       if (!result.album) {
-        throw new Error(`Khong tim thay lai album ${albumIndex}. Bam Lam moi roi thu lai.`);
+        throw new Error(`Không tìm thấy lại album ${albumIndex}. Hãy bấm Làm mới rồi thử lại.`);
       }
 
       return result.album;
@@ -1102,7 +1102,7 @@
 
           if (attempt > 1) {
             writeLog(
-              `Tai lai thanh cong album ${albumIndex} - ${image.name} o lan ${attempt}/${MAX_IMAGE_DOWNLOAD_RETRIES}.`
+              `Tải lại thành công album ${albumIndex} - ${image.name} ở lần ${attempt}/${MAX_IMAGE_DOWNLOAD_RETRIES}.`
             );
           }
 
@@ -1114,10 +1114,10 @@
 
           if (attempt < MAX_IMAGE_DOWNLOAD_RETRIES) {
             writeLog(
-              `Anh ${image.name} cua album ${albumIndex} loi lan ${attempt}/${MAX_IMAGE_DOWNLOAD_RETRIES}: ${error.message}. Dang thu lai...`
+              `Ảnh ${image.name} của album ${albumIndex} lỗi ở lần ${attempt}/${MAX_IMAGE_DOWNLOAD_RETRIES}: ${error.message}. Đang thử lại...`
             );
             showToast(
-              `Anh ${image.index} cua album ${albumIndex} loi, thu lai lan ${attempt + 1}/${MAX_IMAGE_DOWNLOAD_RETRIES}.`,
+              `Ảnh ${image.index} của album ${albumIndex} bị lỗi, đang thử lại lần ${attempt + 1}/${MAX_IMAGE_DOWNLOAD_RETRIES}.`,
               "info",
               1800
             );
@@ -1126,7 +1126,7 @@
         }
       }
 
-      throw lastError || new Error("Khong tai duoc anh sau nhieu lan thu");
+      throw lastError || new Error("Không tải được ảnh sau nhiều lần thử");
     }
 
     async function resolveFailedImageForRetry(failedItem) {
@@ -1136,7 +1136,7 @@
 
       if (!matchedImage) {
         throw new Error(
-          `Khong tim thay lai anh ${failedItem.imageIndex} cua album ${failedItem.albumIndex}`
+          `Không tìm thấy lại ảnh ${failedItem.imageIndex} của album ${failedItem.albumIndex}`
         );
       }
 
@@ -1153,8 +1153,8 @@
       try {
         freshAlbum = await resolveFreshAlbum(album.index);
       } catch (error) {
-        writeLog(`Khong the cap nhat lai album ${album.index}: ${error.message}`);
-        setProgress("Khong the tai album", `Album ${album.index}: ${error.message}`, 0, 1);
+        writeLog(`Không thể cập nhật lại album ${album.index}: ${error.message}`);
+        setProgress("Không thể tải album", `Album ${album.index}: ${error.message}`, 0, 1);
         hideProgress(2600);
         return { failedItems };
       }
@@ -1163,25 +1163,25 @@
       const images = collectImagesFromAlbum(freshAlbum.node, timestamp, freshAlbum.index);
 
       if (!images.length) {
-        writeLog(`Album ${freshAlbum.index} hien khong co anh. Bam Lam moi roi thu lai.`);
-        showToast(`Album ${freshAlbum.index} hien khong co anh.`, "error");
-        setProgress("Album khong co anh", `Album ${freshAlbum.index} hien khong co anh.`, 0, 1);
+        writeLog(`Album ${freshAlbum.index} hiện không có ảnh. Hãy bấm Làm mới rồi thử lại.`);
+        showToast(`Album ${freshAlbum.index} hiện không có ảnh.`, "error");
+        setProgress("Album không có ảnh", `Album ${freshAlbum.index} hiện không có ảnh.`, 0, 1);
         hideProgress(2200);
         return { failedItems };
       }
 
       if (button) {
         button.disabled = true;
-        button.textContent = `Anh 0/${images.length}`;
+        button.textContent = `Ảnh 0/${images.length}`;
       }
 
-      writeLog(`Bat dau tai album ${freshAlbum.index} voi ${images.length} anh.`);
-      showToast(`Dang tai anh album ${freshAlbum.index} (${images.length} anh)...`, "info", 1800);
+      writeLog(`Bắt đầu tải album ${freshAlbum.index} với ${images.length} ảnh.`);
+      showToast(`Đang tải ảnh của album ${freshAlbum.index} (${images.length} ảnh)...`, "info", 1800);
       if (progressContext?.queueTotal) {
         const albumProgressBase = progressContext.queuePosition - 1;
         setProgress(
-          `Hang doi album ${progressContext.queuePosition}/${progressContext.queueTotal}`,
-          `Album ${freshAlbum.index} - dang chuan bi tai 0/${images.length} anh - loi hien tai: 0`,
+          `Hàng đợi album ${progressContext.queuePosition}/${progressContext.queueTotal}`,
+          `Album ${freshAlbum.index} - đang chuẩn bị tải 0/${images.length} ảnh - lỗi hiện tại: 0`,
           albumProgressBase,
           progressContext.queueTotal,
           {
@@ -1190,8 +1190,8 @@
         );
       } else {
         setProgress(
-          `Dang tai album ${freshAlbum.index}`,
-          `Dang chuan bi tai 0/${images.length} anh - loi hien tai: 0`,
+          `Đang tải album ${freshAlbum.index}`,
+          `Đang chuẩn bị tải 0/${images.length} ảnh - lỗi hiện tại: 0`,
           0,
           images.length
         );
@@ -1200,14 +1200,14 @@
       for (const image of images) {
         try {
           if (button) {
-            button.textContent = `Anh ${image.index}/${images.length}`;
+            button.textContent = `Ảnh ${image.index}/${images.length}`;
           }
           if (progressContext?.queueTotal) {
             const queueProgress =
               progressContext.queuePosition - 1 + image.index / images.length;
             setProgress(
-              `Hang doi album ${progressContext.queuePosition}/${progressContext.queueTotal}`,
-              `Album ${freshAlbum.index} - anh ${image.index}/${images.length} - loi hien tai: ${failedItems.length}`,
+              `Hàng đợi album ${progressContext.queuePosition}/${progressContext.queueTotal}`,
+              `Album ${freshAlbum.index} - ảnh ${image.index}/${images.length} - lỗi hiện tại: ${failedItems.length}`,
               queueProgress,
               progressContext.queueTotal,
               {
@@ -1216,19 +1216,19 @@
             );
           } else {
             setProgress(
-              `Dang tai album ${freshAlbum.index}`,
-              `Anh ${image.index}/${images.length}: ${image.name} - loi hien tai: ${failedItems.length}`,
+              `Đang tải album ${freshAlbum.index}`,
+              `Ảnh ${image.index}/${images.length}: ${image.name} - lỗi hiện tại: ${failedItems.length}`,
               image.index,
               images.length
             );
           }
           writeLog(
-            `Dang tai album ${freshAlbum.index} - ${image.index}/${images.length}: ${image.name}`
+            `Đang tải album ${freshAlbum.index} - ${image.index}/${images.length}: ${image.name}`
           );
           await downloadImageWithRetry(image, freshAlbum.index);
         } catch (error) {
-          writeLog(`Tai that bai album ${freshAlbum.index} - ${image.name}: ${error.message}`);
-          showToast(`Anh ${image.index} cua album ${freshAlbum.index} loi: ${error.message}`, "error");
+          writeLog(`Tải thất bại album ${freshAlbum.index} - ${image.name}: ${error.message}`);
+          showToast(`Ảnh ${image.index} của album ${freshAlbum.index} bị lỗi: ${error.message}`, "error");
           failedItems.push({
             albumIndex: freshAlbum.index,
             imageIndex: image.index,
@@ -1238,8 +1238,8 @@
             const queueProgress =
               progressContext.queuePosition - 1 + image.index / images.length;
             setProgress(
-              `Hang doi album ${progressContext.queuePosition}/${progressContext.queueTotal}`,
-              `Album ${freshAlbum.index} - anh ${image.index}/${images.length} vua loi - tong loi hien tai: ${failedItems.length}`,
+              `Hàng đợi album ${progressContext.queuePosition}/${progressContext.queueTotal}`,
+              `Album ${freshAlbum.index} - ảnh ${image.index}/${images.length} vừa lỗi - tổng lỗi hiện tại: ${failedItems.length}`,
               queueProgress,
               progressContext.queueTotal,
               {
@@ -1248,8 +1248,8 @@
             );
           } else {
             setProgress(
-              `Dang tai album ${freshAlbum.index}`,
-              `Anh ${image.index}/${images.length}: ${image.name} vua loi - tong loi hien tai: ${failedItems.length}`,
+              `Đang tải album ${freshAlbum.index}`,
+              `Ảnh ${image.index}/${images.length}: ${image.name} vừa lỗi - tổng lỗi hiện tại: ${failedItems.length}`,
               image.index,
               images.length
             );
@@ -1257,22 +1257,22 @@
         }
       }
 
-      writeLog(`Hoan tat album ${freshAlbum.index}.`);
+      writeLog(`Hoàn tất album ${freshAlbum.index}.`);
       if (failedItems.length) {
         showToast(
-          `Album ${freshAlbum.index} xong, con ${failedItems.length} anh loi. Bam Thu lai failed de tai lai.`,
+          `Album ${freshAlbum.index} đã tải xong, còn ${failedItems.length} ảnh lỗi. Hãy bấm "Tải lại ảnh lỗi".`,
           "error",
           4200
         );
       } else {
-        showToast(`Da tai xong album ${freshAlbum.index}.`, "success");
+        showToast(`Đã tải xong album ${freshAlbum.index}.`, "success");
       }
       if (progressContext?.queueTotal) {
         setProgress(
-          `Hang doi album ${progressContext.queuePosition}/${progressContext.queueTotal}`,
+          `Hàng đợi album ${progressContext.queuePosition}/${progressContext.queueTotal}`,
           failedItems.length
-            ? `Album ${freshAlbum.index} xong, con ${failedItems.length} anh loi`
-            : `Da tai xong album ${freshAlbum.index}`,
+            ? `Album ${freshAlbum.index} đã xong, còn ${failedItems.length} ảnh lỗi`
+            : `Đã tải xong album ${freshAlbum.index}`,
           progressContext.queuePosition,
           progressContext.queueTotal,
           {
@@ -1281,10 +1281,10 @@
         );
       } else {
         setProgress(
-          `Dang tai album ${freshAlbum.index}`,
+          `Đang tải album ${freshAlbum.index}`,
           failedItems.length
-            ? `Hoan tat voi ${failedItems.length} anh loi. Bam Thu lai failed de tai lai.`
-            : `Da tai xong album ${freshAlbum.index}`,
+            ? `Hoàn tất với ${failedItems.length} ảnh lỗi. Hãy bấm "Tải lại ảnh lỗi".`
+            : `Đã tải xong album ${freshAlbum.index}`,
           images.length,
           images.length
         );
@@ -1293,7 +1293,7 @@
 
       if (button) {
         button.disabled = false;
-        button.textContent = "Anh";
+        button.textContent = "Ảnh";
       }
 
       return { failedItems };
@@ -1305,7 +1305,7 @@
       try {
         freshAlbum = await resolveFreshAlbum(album.index);
       } catch (error) {
-        writeLog(`Khong the cap nhat lai album ${album.index}: ${error.message}`);
+        writeLog(`Không thể cập nhật lại album ${album.index}: ${error.message}`);
         return;
       }
 
@@ -1313,8 +1313,8 @@
       const images = collectImagesFromAlbum(freshAlbum.node, timestamp, freshAlbum.index);
 
       if (!images.length) {
-        writeLog(`Album ${freshAlbum.index} hien khong co anh. Bam Lam moi roi thu lai.`);
-        showToast(`Album ${freshAlbum.index} hien khong co anh.`, "error");
+        writeLog(`Album ${freshAlbum.index} hiện không có ảnh. Hãy bấm Làm mới rồi thử lại.`);
+        showToast(`Album ${freshAlbum.index} hiện không có ảnh.`, "error");
         return;
       }
 
@@ -1323,8 +1323,8 @@
         button.textContent = `PDF 0/${images.length}`;
       }
 
-      writeLog(`Bat dau tao PDF album ${freshAlbum.index} voi ${images.length} anh.`);
-      showToast(`Dang tao PDF album ${freshAlbum.index}...`, "info", 1800);
+      writeLog(`Bắt đầu tạo PDF cho album ${freshAlbum.index} với ${images.length} ảnh.`);
+      showToast(`Đang tạo PDF cho album ${freshAlbum.index}...`, "info", 1800);
 
       try {
         await downloadPdfFromImages(images, timestamp, freshAlbum.index, (current, total) => {
@@ -1333,12 +1333,12 @@
           }
         });
         writeLog(
-          `Da tai PDF album ${freshAlbum.index}: ${buildPdfFileName(timestamp, freshAlbum.index)}`
+          `Đã tải PDF album ${freshAlbum.index}: ${buildPdfFileName(timestamp, freshAlbum.index)}`
         );
-        showToast(`Da tao xong PDF album ${freshAlbum.index}.`, "success", 3200);
+        showToast(`Đã tạo xong PDF cho album ${freshAlbum.index}.`, "success", 3200);
       } catch (error) {
-        writeLog(`Tao PDF that bai album ${freshAlbum.index}: ${error.message}`);
-        showToast(`PDF album ${freshAlbum.index} loi: ${error.message}`, "error", 4200);
+        writeLog(`Tạo PDF thất bại cho album ${freshAlbum.index}: ${error.message}`);
+        showToast(`Tạo PDF cho album ${freshAlbum.index} thất bại: ${error.message}`, "error", 4200);
       } finally {
         if (button) {
           button.disabled = false;
@@ -1410,13 +1410,13 @@
 
         const selectButton = document.createElement("button");
         selectButton.className = "tm-zalo-album-select-btn";
-        selectButton.textContent = "Chon";
-        selectButton.title = `Chon album ${album.index} vao hang doi tai`;
+        selectButton.textContent = "Chọn";
+        selectButton.title = `Chọn album ${album.index} vào hàng đợi tải`;
 
         const imageButton = document.createElement("button");
         imageButton.className = "tm-zalo-album-download-btn";
-        imageButton.textContent = "Anh";
-        imageButton.title = `Tai tung anh cua album ${album.index}`;
+        imageButton.textContent = "Ảnh";
+        imageButton.title = `Tải từng ảnh của album ${album.index}`;
 
         selectButton.addEventListener("click", (event) => {
           event.preventDefault();
@@ -1453,25 +1453,25 @@
 
       const queue = selectedAlbumIndexes.map((albumIndex) => ({ index: albumIndex }));
       if (!queue.length) {
-        showToast("Chua chon album nao.", "error");
+        showToast("Bạn chưa chọn album nào.", "error");
         return;
       }
 
-      const sessionLabel = queue.length === 1 ? `album ${queue[0].index}` : `${queue.length} album da chon`;
+      const sessionLabel = queue.length === 1 ? `album ${queue[0].index}` : `${queue.length} album đã chọn`;
       const failedItems = [];
       isQueueDownloading = true;
       resetFailedDownloads(sessionLabel);
-      queueButton.textContent = `Hang doi 0/${queue.length}`;
-      writeLog(`Bat dau tai hang doi ${queue.length} album: ${queue.map((album) => album.index).join(", ")}.`);
-      setProgress("Hang doi album", `Dang chuan bi tai ${queue.length} album da chon`, 0, queue.length);
+      queueButton.textContent = `Hàng đợi 0/${queue.length}`;
+      writeLog(`Bắt đầu tải hàng đợi ${queue.length} album: ${queue.map((album) => album.index).join(", ")}.`);
+      setProgress("Hàng đợi album", `Đang chuẩn bị tải ${queue.length} album đã chọn`, 0, queue.length);
       updateAlbumControls();
 
       try {
         for (let i = 0; i < queue.length; i += 1) {
           const album = queue[i];
-          queueButton.textContent = `Hang doi ${i + 1}/${queue.length}`;
-          queueButton.title = `Dang tai album ${album.index} theo thu tu da chon`;
-          showToast(`Dang tai album ${album.index} (${i + 1}/${queue.length})...`, "info", 1800);
+          queueButton.textContent = `Hàng đợi ${i + 1}/${queue.length}`;
+          queueButton.title = `Đang tải album ${album.index} theo đúng thứ tự đã chọn`;
+          showToast(`Đang tải album ${album.index} (${i + 1}/${queue.length})...`, "info", 1800);
           const result = await downloadAlbum(album, null, {
             queuePosition: i + 1,
             queueTotal: queue.length,
@@ -1479,21 +1479,21 @@
           failedItems.push(...result.failedItems);
         }
 
-        writeLog(`Hoan tat tai hang doi ${queue.length} album.`);
+        writeLog(`Hoàn tất tải hàng đợi ${queue.length} album.`);
         if (failedItems.length) {
           showToast(
-            `Da tai xong ${queue.length} album, con ${failedItems.length} anh failed. Bam Thu lai failed de tai lai.`,
+            `Đã tải xong ${queue.length} album, còn ${failedItems.length} ảnh lỗi. Hãy bấm "Tải lại ảnh lỗi".`,
             "error",
             4200
           );
         } else {
-          showToast(`Da tai xong ${queue.length} album da chon.`, "success", 3200);
+          showToast(`Đã tải xong ${queue.length} album đã chọn.`, "success", 3200);
         }
         setProgress(
-          "Hang doi album",
+          "Hàng đợi album",
           failedItems.length
-            ? `Da tai xong ${queue.length} album, con ${failedItems.length} anh loi`
-            : `Da tai xong ${queue.length} album da chon`,
+            ? `Đã tải xong ${queue.length} album, còn ${failedItems.length} ảnh lỗi`
+            : `Đã tải xong ${queue.length} album đã chọn`,
           queue.length,
           queue.length
         );
@@ -1512,29 +1512,29 @@
 
       const retryQueue = failedDownloadItems.map((item) => ({ ...item }));
       if (!retryQueue.length) {
-        showToast("Khong co anh failed de thu lai.", "info");
+        showToast("Hiện chưa có ảnh lỗi để tải lại.", "info");
         return;
       }
 
-      const retryLabel = failedSessionLabel || "anh failed";
+      const retryLabel = failedSessionLabel || "ảnh lỗi";
       const nextFailedItems = [];
       isQueueDownloading = true;
       resetFailedDownloads(retryLabel);
-      writeLog(`Bat dau thu lai ${retryQueue.length} anh failed.`);
-      setProgress("Thu lai anh failed", `Dang chuan bi tai lai ${retryQueue.length} anh`, 0, retryQueue.length);
+      writeLog(`Bắt đầu tải lại ${retryQueue.length} ảnh lỗi.`);
+      setProgress("Tải lại ảnh lỗi", `Đang chuẩn bị tải lại ${retryQueue.length} ảnh`, 0, retryQueue.length);
       updateAlbumControls();
 
       try {
         for (let i = 0; i < retryQueue.length; i += 1) {
           const failedItem = retryQueue[i];
           setProgress(
-            "Thu lai anh failed",
-            `Dang thu lai album ${failedItem.albumIndex} - anh ${failedItem.imageIndex}: ${failedItem.name} - con loi hien tai: ${nextFailedItems.length}`,
+            "Tải lại ảnh lỗi",
+            `Đang tải lại album ${failedItem.albumIndex} - ảnh ${failedItem.imageIndex}: ${failedItem.name} - số lỗi hiện tại: ${nextFailedItems.length}`,
             i + 1,
             retryQueue.length
           );
           writeLog(
-            `Dang thu lai album ${failedItem.albumIndex} - anh ${failedItem.imageIndex}: ${failedItem.name}`
+            `Đang tải lại album ${failedItem.albumIndex} - ảnh ${failedItem.imageIndex}: ${failedItem.name}`
           );
 
           try {
@@ -1543,16 +1543,16 @@
           } catch (error) {
             nextFailedItems.push(failedItem);
             writeLog(
-              `Thu lai that bai album ${failedItem.albumIndex} - ${failedItem.name}: ${error.message}`
+              `Tải lại thất bại album ${failedItem.albumIndex} - ${failedItem.name}: ${error.message}`
             );
             showToast(
-              `Thu lai anh ${failedItem.imageIndex} cua album ${failedItem.albumIndex} loi: ${error.message}`,
+              `Tải lại ảnh ${failedItem.imageIndex} của album ${failedItem.albumIndex} thất bại: ${error.message}`,
               "error",
               3200
             );
             setProgress(
-              "Thu lai anh failed",
-              `Thu lai album ${failedItem.albumIndex} - anh ${failedItem.imageIndex} van loi - con loi hien tai: ${nextFailedItems.length}`,
+              "Tải lại ảnh lỗi",
+              `Album ${failedItem.albumIndex} - ảnh ${failedItem.imageIndex} vẫn lỗi - số lỗi hiện tại: ${nextFailedItems.length}`,
               i + 1,
               retryQueue.length
             );
@@ -1561,18 +1561,18 @@
 
         if (nextFailedItems.length) {
           showToast(
-            `Thu lai xong, con ${nextFailedItems.length} anh failed. Ban co the bam Thu lai failed them.`,
+            `Đã tải lại xong, còn ${nextFailedItems.length} ảnh lỗi. Bạn có thể bấm "Tải lại ảnh lỗi" thêm lần nữa.`,
             "error",
             4200
           );
         } else {
-          showToast("Da tai lai thanh cong tat ca anh failed.", "success", 3200);
+          showToast("Đã tải lại thành công tất cả ảnh lỗi.", "success", 3200);
         }
         setProgress(
-          "Thu lai anh failed",
+          "Tải lại ảnh lỗi",
           nextFailedItems.length
-            ? `Thu lai xong, con ${nextFailedItems.length} anh loi`
-            : "Da tai lai thanh cong tat ca anh failed",
+            ? `Đã tải lại xong, còn ${nextFailedItems.length} ảnh lỗi`
+            : "Đã tải lại thành công tất cả ảnh lỗi",
           retryQueue.length,
           retryQueue.length
         );
@@ -1590,7 +1590,7 @@
       if (!xpath) {
         clearInjectedAlbumButtons();
         clearInjectedImageBadges();
-        writeLog("Chua nhap XPath.");
+        writeLog("Chưa có XPath.");
         return [];
       }
 
@@ -1601,7 +1601,7 @@
         trimSelectedAlbums(albums);
         injectAlbumButtons(albums);
         injectImageBadges(albums);
-        writeLog(`Lam moi xong: ${albums.length} album, ${totalImages} anh dang duoc load.`);
+        writeLog(`Làm mới xong: ${albums.length} album, ${totalImages} ảnh đang được tải lên.`);
         showRefreshSummary(albums.length, totalImages);
         updateAlbumControls();
         return albums;
@@ -1609,9 +1609,9 @@
         clearInjectedAlbumButtons();
         clearInjectedImageBadges();
         latestAlbums = [];
-        writeLog(`Lam moi that bai: ${error.message}`);
-        showToast(`Lam moi that bai: ${error.message}`, "error", 3200);
-        setRefreshLabel("Co loi", error.message);
+        writeLog(`Làm mới thất bại: ${error.message}`);
+        showToast(`Làm mới thất bại: ${error.message}`, "error", 3200);
+        setRefreshLabel("Có lỗi", error.message);
         updateQueueButton();
         return [];
       }
@@ -1621,15 +1621,15 @@
       if (isQueueDownloading) {
         return;
       }
-      writeLog("Dang lam moi danh sach album va anh...");
+      writeLog("Đang làm mới danh sách album và ảnh...");
       refreshButton.disabled = true;
-      setRefreshLabel("Dang quet...", "Dang quet lai album dang load");
+      setRefreshLabel("Đang quét...", "Đang quét lại các album đang hiển thị");
       try {
         await refreshAlbums();
       } finally {
         refreshButton.disabled = false;
-        if (refreshButton.textContent === "Dang quet...") {
-          setRefreshLabel("Lam moi", "Lam moi de quet lai cac album dang duoc load");
+        if (refreshButton.textContent === "Đang quét...") {
+          setRefreshLabel("Làm mới", "Quét lại các album đang hiển thị");
         }
       }
     });
