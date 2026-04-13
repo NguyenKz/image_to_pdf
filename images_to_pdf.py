@@ -48,15 +48,28 @@ CONFIG_FILE = Path.home() / ".image_to_pdf_config.json"
 MODE_SPLIT_BY_PREFIX = "split_by_prefix"
 MODE_MERGE_ALL = "merge_all"
 SUPPORTED_MODES = {MODE_SPLIT_BY_PREFIX, MODE_MERGE_ALL}
+IMAGE_ORDER_DEFAULT = "default"
+IMAGE_ORDER_ALL_BY_NAME = "all_by_name"
+IMAGE_ORDER_ALL_BY_CREATED_AT = "all_by_created_at"
+SUPPORTED_IMAGE_ORDERS = {
+    IMAGE_ORDER_DEFAULT,
+    IMAGE_ORDER_ALL_BY_NAME,
+    IMAGE_ORDER_ALL_BY_CREATED_AT,
+}
+IMAGE_ORDER_LABELS = {
+    IMAGE_ORDER_DEFAULT: "Chỉ lấy ảnh đúng định dạng",
+    IMAGE_ORDER_ALL_BY_NAME: "Lấy tất cả ảnh, sắp theo tên",
+    IMAGE_ORDER_ALL_BY_CREATED_AT: "Lấy tất cả ảnh, sắp theo ngày tạo",
+}
 ProgressCallback = Callable[[int, int, str], None]
 
 
 def is_supported_image(path: Path) -> bool:
-    return (
-        path.is_file()
-        and path.suffix.lower() in SUPPORTED_EXTENSIONS
-        and IMAGE_NAME_PATTERN.fullmatch(path.stem) is not None
-    )
+    return path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS
+
+
+def is_legacy_supported_image(path: Path) -> bool:
+    return is_supported_image(path) and IMAGE_NAME_PATTERN.fullmatch(path.stem) is not None
 
 
 def get_image_group(path: Path) -> str:
@@ -114,6 +127,21 @@ def save_last_mode(mode: str) -> None:
 
     config = load_app_config()
     config["last_mode"] = mode
+    save_app_config(config)
+
+
+def load_last_image_order() -> str | None:
+    config = load_app_config()
+    image_order = config.get("last_image_order")
+    return image_order if image_order in SUPPORTED_IMAGE_ORDERS else None
+
+
+def save_last_image_order(image_order: str) -> None:
+    if image_order not in SUPPORTED_IMAGE_ORDERS:
+        return
+
+    config = load_app_config()
+    config["last_image_order"] = image_order
     save_app_config(config)
 
 
@@ -183,19 +211,56 @@ def choose_output_dir(parent: object, initial_dir: Path | None) -> Path | None:
     return Path(selected_dir)
 
 
-def load_image_paths(input_dir: Path) -> list[Path]:
-    image_paths = sorted(path for path in input_dir.iterdir() if is_supported_image(path))
-    if not image_paths:
-        raise FileNotFoundError(
-            "Không tìm thấy ảnh hợp lệ trong thư mục: "
-            f"{input_dir}\nTên file phải có dạng timestamp_xx-xxxxxxxx"
+def get_image_order_label(image_order: str) -> str:
+    return IMAGE_ORDER_LABELS.get(
+        image_order,
+        "Giữ cách cũ, chỉ lấy file đúng tên mẫu hiện tại",
+    )
+
+
+def get_image_created_timestamp(path: Path) -> float:
+    path_stat = path.stat()
+    return getattr(path_stat, "st_birthtime", path_stat.st_mtime)
+
+
+def load_image_paths(input_dir: Path, image_order: str = IMAGE_ORDER_DEFAULT) -> list[Path]:
+    if image_order == IMAGE_ORDER_DEFAULT:
+        image_paths = sorted(path for path in input_dir.iterdir() if is_legacy_supported_image(path))
+    elif image_order == IMAGE_ORDER_ALL_BY_NAME:
+        image_paths = sorted(
+            (path for path in input_dir.iterdir() if is_supported_image(path)),
+            key=lambda path: (path.name.lower(), path.name),
         )
+    elif image_order == IMAGE_ORDER_ALL_BY_CREATED_AT:
+        image_paths = sorted(
+            (path for path in input_dir.iterdir() if is_supported_image(path)),
+            key=lambda path: (get_image_created_timestamp(path), path.name.lower(), path.name),
+        )
+    else:
+        raise ValueError(f"Tùy chọn sắp xếp ảnh không hợp lệ: {image_order}")
+
+    if not image_paths:
+        if image_order == IMAGE_ORDER_DEFAULT:
+            raise FileNotFoundError(
+                "Không tìm thấy ảnh hợp lệ trong thư mục: "
+                f"{input_dir}\nTên file phải có dạng timestamp_xx-xxxxxxxx"
+            )
+        raise FileNotFoundError(f"Không tìm thấy file ảnh hợp lệ trong thư mục: {input_dir}")
 
     return image_paths
 
 
-def load_image_groups(input_dir: Path) -> dict[str, list[Path]]:
-    image_paths = load_image_paths(input_dir)
+def load_image_groups(
+    input_dir: Path,
+    image_order: str = IMAGE_ORDER_DEFAULT,
+) -> dict[str, list[Path]]:
+    if image_order != IMAGE_ORDER_DEFAULT:
+        raise ValueError(
+            "Tùy chọn lấy tất cả ảnh và sắp theo tên/ngày tạo chỉ dùng với chế độ "
+            "“Gộp tất cả ảnh thành 1 PDF”."
+        )
+
+    image_paths = load_image_paths(input_dir, image_order)
 
     groups: dict[str, list[Path]] = {}
     for image_path in image_paths:
@@ -205,19 +270,34 @@ def load_image_groups(input_dir: Path) -> dict[str, list[Path]]:
     return groups
 
 
-def summarize_input_dir(input_dir: Path, mode: str) -> str:
-    image_paths = load_image_paths(input_dir)
-    group_count = len({get_image_group(path) for path in image_paths})
+def summarize_input_dir(
+    input_dir: Path,
+    mode: str,
+    image_order: str = IMAGE_ORDER_DEFAULT,
+) -> str:
+    image_paths = load_image_paths(input_dir, image_order)
+    group_count_text = (
+        str(len({get_image_group(path) for path in image_paths}))
+        if image_order == IMAGE_ORDER_DEFAULT
+        else "Không áp dụng"
+    )
     mode_text = (
         "Gộp tất cả ảnh thành 1 PDF"
         if mode == MODE_MERGE_ALL
         else "Tách nhiều PDF theo tiền tố"
     )
+    image_order_text = get_image_order_label(image_order)
+    extra_note = (
+        "\nLưu ý: tùy chọn này chỉ áp dụng khi chọn chế độ gộp tất cả ảnh."
+        if mode == MODE_SPLIT_BY_PREFIX and image_order != IMAGE_ORDER_DEFAULT
+        else ""
+    )
     return (
         f"Đã chọn thư mục:\n{input_dir}\n\n"
         f"Số ảnh hợp lệ tìm được: {len(image_paths)}\n"
-        f"Số nhóm theo tiền tố: {group_count}\n"
+        f"Số nhóm theo tiền tố: {group_count_text}\n"
         f"Chế độ hiện tại: {mode_text}\n\n"
+        f"Cách lấy ảnh: {image_order_text}{extra_note}\n\n"
         "Nhấn “Tạo PDF” để bắt đầu."
     )
 
@@ -380,13 +460,14 @@ def build_pdfs(
     delete_after_use: bool = False,
     progress_callback: ProgressCallback | None = None,
     custom_output_name: str = "",
+    image_order: str = IMAGE_ORDER_DEFAULT,
 ) -> list[tuple[Path, int]]:
     processed_image_paths: list[Path] = []
     timestamp_text = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     used_names: set[str] = set()
 
     if mode == MODE_MERGE_ALL:
-        image_paths = load_image_paths(input_dir)
+        image_paths = load_image_paths(input_dir, image_order)
         total_steps = len(image_paths) + (len(image_paths) if delete_after_use else 0)
         progress_state = {"current": 0, "total": max(total_steps, 1)}
         if progress_callback is not None:
@@ -428,7 +509,7 @@ def build_pdfs(
     if mode != MODE_SPLIT_BY_PREFIX:
         raise ValueError(f"Chế độ không hợp lệ: {mode}")
 
-    image_groups = load_image_groups(input_dir)
+    image_groups = load_image_groups(input_dir, image_order)
     total_images = sum(len(paths) for paths in image_groups.values())
     total_steps = total_images + (total_images if delete_after_use else 0)
     progress_state = {"current": 0, "total": max(total_steps, 1)}
@@ -508,6 +589,11 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Tên file output tùy chỉnh. Nếu có giá trị, tên file sẽ theo dạng ten_file_yyyy-mm-dd_hh-mm-ss_so_trang.pdf.",
     )
+    parser.add_argument(
+        "--image-order",
+        choices=sorted(SUPPORTED_IMAGE_ORDERS),
+        help="Giữ cách đọc ảnh cũ hoặc lấy tất cả ảnh trong thư mục rồi sắp theo tên/ngày tạo.",
+    )
     return parser.parse_args()
 
 
@@ -547,6 +633,17 @@ def resolve_initial_output_name(output_name: str) -> str:
     return output_name if output_name else load_last_output_name()
 
 
+def resolve_initial_image_order(image_order: str | None) -> str:
+    if image_order in SUPPORTED_IMAGE_ORDERS:
+        return image_order
+
+    saved_image_order = load_last_image_order()
+    if saved_image_order is not None:
+        return saved_image_order
+
+    return IMAGE_ORDER_DEFAULT
+
+
 def resolve_initial_output_dir(output_path: Path) -> Path:
     saved_output_dir = load_last_output_dir()
     if saved_output_dir is not None:
@@ -560,6 +657,7 @@ def main() -> None:
     initial_mode = resolve_initial_mode(args.mode)
     initial_delete_after_use = resolve_initial_delete_after_use(args.delete_after_use)
     initial_output_name = resolve_initial_output_name(args.output_name)
+    initial_image_order = resolve_initial_image_order(args.image_order)
     initial_output_dir = resolve_initial_output_dir(args.output)
 
     try:
@@ -719,6 +817,7 @@ def main() -> None:
     output_dir_var = tk.StringVar(value=str(initial_output_dir))
     output_name_var = tk.StringVar(value=initial_output_name)
     mode_var = tk.StringVar(value=initial_mode)
+    image_order_var = tk.StringVar(value=initial_image_order)
     delete_after_use_var = tk.BooleanVar(value=initial_delete_after_use)
     status_var = tk.StringVar(value="Sẵn sàng.")
     progress_text_var = tk.StringVar(value="Chưa bắt đầu xử lý.")
@@ -842,8 +941,48 @@ def main() -> None:
     )
     split_mode_radio.pack(side="left", padx=(18, 0))
 
-    ttk.Label(options_card, text="Tùy chọn khác", style="Section.TLabel").grid(
+    ttk.Label(options_card, text="Cách lấy ảnh", style="Section.TLabel").grid(
         row=4, column=0, sticky="w"
+    )
+    image_order_row = ttk.Frame(options_card, style="Card.TFrame")
+    image_order_row.grid(row=5, column=0, sticky="w", pady=(6, 0))
+    default_image_order_radio = ttk.Radiobutton(
+        image_order_row,
+        text=IMAGE_ORDER_LABELS[IMAGE_ORDER_DEFAULT],
+        value=IMAGE_ORDER_DEFAULT,
+        variable=image_order_var,
+        style="Modern.TRadiobutton",
+    )
+    default_image_order_radio.pack(anchor="w")
+    by_name_image_order_radio = ttk.Radiobutton(
+        image_order_row,
+        text=IMAGE_ORDER_LABELS[IMAGE_ORDER_ALL_BY_NAME],
+        value=IMAGE_ORDER_ALL_BY_NAME,
+        variable=image_order_var,
+        style="Modern.TRadiobutton",
+    )
+    by_name_image_order_radio.pack(anchor="w", pady=(6, 0))
+    by_created_at_image_order_radio = ttk.Radiobutton(
+        image_order_row,
+        text=IMAGE_ORDER_LABELS[IMAGE_ORDER_ALL_BY_CREATED_AT],
+        value=IMAGE_ORDER_ALL_BY_CREATED_AT,
+        variable=image_order_var,
+        style="Modern.TRadiobutton",
+    )
+    by_created_at_image_order_radio.pack(anchor="w", pady=(6, 0))
+    ttk.Label(
+        options_card,
+        text=(
+            "Nếu chọn sắp theo tên hoặc ngày tạo, app sẽ lấy toàn bộ ảnh hợp lệ trong "
+            "thư mục. Hai tùy chọn này chỉ áp dụng cho chế độ gộp tất cả ảnh."
+        ),
+        style="Body.TLabel",
+        wraplength=320,
+        justify="left",
+    ).grid(row=6, column=0, sticky="w", pady=(6, 12))
+
+    ttk.Label(options_card, text="Tùy chọn khác", style="Section.TLabel").grid(
+        row=7, column=0, sticky="w"
     )
     delete_after_use_checkbox = ttk.Checkbutton(
         options_card,
@@ -851,15 +990,15 @@ def main() -> None:
         variable=delete_after_use_var,
         style="Modern.TCheckbutton",
     )
-    delete_after_use_checkbox.grid(row=5, column=0, sticky="w", pady=(6, 12))
+    delete_after_use_checkbox.grid(row=8, column=0, sticky="w", pady=(6, 12))
 
     ttk.Label(options_card, text="Thao tác", style="Section.TLabel").grid(
-        row=6, column=0, sticky="w"
+        row=9, column=0, sticky="w"
     )
     button_row = ttk.Frame(options_card, style="Card.TFrame")
-    button_row.grid(row=7, column=0, sticky="ew", pady=(6, 0))
+    button_row.grid(row=10, column=0, sticky="ew", pady=(6, 0))
     status_panel = ttk.Frame(options_card, style="Card.TFrame")
-    status_panel.grid(row=8, column=0, sticky="ew", pady=(14, 0))
+    status_panel.grid(row=11, column=0, sticky="ew", pady=(14, 0))
 
     results_card = ttk.Frame(frame, padding=22, style="Card.TFrame")
     results_card.grid(row=3, column=0, columnspan=2, sticky="nsew", pady=(16, 0))
@@ -940,6 +1079,9 @@ def main() -> None:
             open_output_button,
             merge_mode_radio,
             split_mode_radio,
+            default_image_order_radio,
+            by_name_image_order_radio,
+            by_created_at_image_order_radio,
             delete_after_use_checkbox,
             output_name_entry,
             create_button,
@@ -990,6 +1132,7 @@ def main() -> None:
         input_dir: Path,
         output_dir: Path,
         selected_mode: str,
+        image_order: str,
         delete_after_use: bool,
         output_files: list[tuple[Path, int]],
     ) -> None:
@@ -1001,6 +1144,7 @@ def main() -> None:
             else "Tách nhiều PDF theo tiền tố"
         )
         delete_text = "Có" if delete_after_use else "Không"
+        image_order_text = get_image_order_label(image_order)
         deleted_summary = f"Số ảnh đã xóa: {total_images}\n\n" if delete_after_use else ""
         details = "\n".join(
             f"- {output_file.name}: {image_count} ảnh\n  {output_file}"
@@ -1011,6 +1155,7 @@ def main() -> None:
             f"Thư mục nguồn: {input_dir}\n"
             f"Thư mục output: {output_dir}\n"
             f"Chế độ xuất: {mode_text}\n"
+            f"Cách lấy ảnh: {image_order_text}\n"
             f"Xóa ảnh sau khi tạo PDF: {delete_text}\n"
             f"Số file PDF đã tạo: {total_files}\n"
             f"Tổng số ảnh đã xử lý: {total_images}\n\n"
@@ -1032,12 +1177,13 @@ def main() -> None:
                 current, total, message = payload
                 update_progress(current, total, message)
             elif event_type == "success":
-                input_dir, output_dir, selected_mode, delete_after_use, output_files = payload
+                input_dir, output_dir, selected_mode, image_order, delete_after_use, output_files = payload
                 finish_progress("Hoàn tất xử lý.")
                 handle_build_success(
                     input_dir,
                     output_dir,
                     selected_mode,
+                    image_order,
                     delete_after_use,
                     output_files,
                 )
@@ -1079,7 +1225,11 @@ def main() -> None:
         save_last_input_dir(selected_dir)
         try:
             set_result(
-                summarize_input_dir(selected_dir, mode_var.get()),
+                summarize_input_dir(
+                    selected_dir,
+                    mode_var.get(),
+                    image_order_var.get(),
+                ),
                 status_message="Đã cập nhật thư mục ảnh.",
             )
         except Exception as exc:
@@ -1120,6 +1270,7 @@ def main() -> None:
         raw_output_dir = output_dir_var.get().strip()
         custom_output_name = output_name_var.get().strip()
         selected_mode = mode_var.get()
+        selected_image_order = image_order_var.get()
         delete_after_use = delete_after_use_var.get()
         if is_processing:
             return
@@ -1141,6 +1292,14 @@ def main() -> None:
         output_dir = Path(raw_output_dir).expanduser()
         output_path = output_dir.resolve()
 
+        if selected_mode == MODE_SPLIT_BY_PREFIX and selected_image_order != IMAGE_ORDER_DEFAULT:
+            set_result(
+                "Tùy chọn lấy tất cả ảnh và sắp theo tên/ngày tạo chỉ dùng với chế độ "
+                "“Gộp tất cả ảnh thành 1 PDF”.",
+                is_error=True,
+            )
+            return
+
         status_var.set("Đang tạo PDF...")
         start_progress("Đang chuẩn bị xử lý...")
         set_controls_enabled(False)
@@ -1148,6 +1307,7 @@ def main() -> None:
         save_last_input_dir(input_dir)
         save_last_output_dir(output_path)
         save_last_mode(selected_mode)
+        save_last_image_order(selected_image_order)
         save_delete_after_use(delete_after_use)
         save_last_output_name(custom_output_name)
 
@@ -1163,9 +1323,20 @@ def main() -> None:
                     delete_after_use=delete_after_use,
                     progress_callback=queue_progress,
                     custom_output_name=custom_output_name,
+                    image_order=selected_image_order,
                 )
                 worker_queue.put(
-                    ("success", (input_dir, output_path, selected_mode, delete_after_use, output_files))
+                    (
+                        "success",
+                        (
+                            input_dir,
+                            output_path,
+                            selected_mode,
+                            selected_image_order,
+                            delete_after_use,
+                            output_files,
+                        ),
+                    )
                 )
             except Exception as exc:
                 worker_queue.put(("error", exc))
@@ -1193,7 +1364,7 @@ def main() -> None:
     if initial_input_dir is not None:
         try:
             set_result(
-                summarize_input_dir(initial_input_dir, initial_mode)
+                summarize_input_dir(initial_input_dir, initial_mode, initial_image_order)
                 + f"\nXóa ảnh sau khi tạo PDF: {'Có' if initial_delete_after_use else 'Không'}"
                 + (
                     f"\nTên file output tùy chỉnh: {initial_output_name}"
