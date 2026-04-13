@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zalo Chat XPath Image Downloader
 // @namespace    https://chat.zalo.me/
-// @version      1.0.2
+// @version      1.0.3
 // @description  Nhap XPath, dem anh va tai anh theo thu tu tren Zalo Chat
 // @author       GPT
 // @match        https://chat.zalo.me/*
@@ -19,6 +19,7 @@
   const PANEL_ID = "xpath-image-downloader-panel";
   const TOAST_CONTAINER_ID = `${PANEL_ID}-toast-container`;
   const QUEUE_BUTTON_ID = `${PANEL_ID}-queue-download`;
+  const RETRY_BUTTON_ID = `${PANEL_ID}-retry-failed`;
   const PROGRESS_PANEL_ID = `${PANEL_ID}-progress`;
   const DEFAULT_ALBUM_XPATH =
     '//*[@id="album-container"]/div[contains(concat(" ", normalize-space(@class), " "), " album ")]';
@@ -509,9 +510,46 @@
         cursor: default;
       }
 
-      #${PROGRESS_PANEL_ID} {
+      #${RETRY_BUTTON_ID} {
         position: fixed;
         top: 136px;
+        right: 20px;
+        z-index: 999999;
+        min-width: 176px;
+        padding: 12px 18px;
+        border: none;
+        border-radius: 999px;
+        background: linear-gradient(135deg, #dc2626, #b91c1c);
+        box-shadow: 0 14px 30px rgba(220, 38, 38, 0.24);
+        backdrop-filter: blur(10px);
+        font-family: Inter, Arial, sans-serif;
+        font-size: 14px;
+        font-weight: 700;
+        color: #ffffff;
+        cursor: pointer;
+        transition:
+          transform 0.15s ease,
+          box-shadow 0.15s ease,
+          opacity 0.15s ease;
+      }
+
+      #${RETRY_BUTTON_ID}:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 18px 34px rgba(220, 38, 38, 0.3);
+      }
+
+      #${RETRY_BUTTON_ID}:disabled {
+        opacity: 0.7;
+        cursor: default;
+      }
+
+      #${RETRY_BUTTON_ID}[hidden] {
+        display: none;
+      }
+
+      #${PROGRESS_PANEL_ID} {
+        position: fixed;
+        top: 194px;
         right: 20px;
         z-index: 999999;
         width: 320px;
@@ -803,6 +841,12 @@
     queueButton.textContent = "Tai da chon";
     queueButton.title = "Chon album roi bam de tai theo thu tu da chon";
 
+    const retryButton = document.createElement("button");
+    retryButton.id = RETRY_BUTTON_ID;
+    retryButton.hidden = true;
+    retryButton.textContent = "Thu lai failed";
+    retryButton.title = "Khong co anh failed de thu lai";
+
     const progressPanel = document.createElement("div");
     progressPanel.id = PROGRESS_PANEL_ID;
     progressPanel.hidden = true;
@@ -826,6 +870,8 @@
     let isQueueDownloading = false;
     let selectedAlbumIndexes = [];
     let latestAlbums = [];
+    let failedDownloadItems = [];
+    let failedSessionLabel = "";
     const albumControls = new Map();
     const progressTitleNode = progressPanel.querySelector(".tm-zalo-progress-title");
     const progressDetailNode = progressPanel.querySelector(".tm-zalo-progress-detail");
@@ -856,6 +902,51 @@
     function setRefreshLabel(label, title) {
       refreshButton.textContent = label;
       refreshButton.title = title || refreshButton.title;
+    }
+
+    function buildFailedItemKey(item) {
+      return `${item.albumIndex}:${item.imageIndex}:${item.name}`;
+    }
+
+    function dedupeFailedItems(items) {
+      const seenKeys = new Set();
+      return items.filter((item) => {
+        const key = buildFailedItemKey(item);
+        if (seenKeys.has(key)) {
+          return false;
+        }
+        seenKeys.add(key);
+        return true;
+      });
+    }
+
+    function updateRetryButton() {
+      const failedCount = failedDownloadItems.length;
+      retryButton.hidden = failedCount === 0;
+      retryButton.disabled = isQueueDownloading || failedCount === 0;
+
+      if (!failedCount) {
+        retryButton.textContent = "Thu lai failed";
+        retryButton.title = "Khong co anh failed de thu lai";
+        return;
+      }
+
+      retryButton.textContent = `Thu lai failed (${failedCount})`;
+      retryButton.title = failedSessionLabel
+        ? `Thu lai ${failedCount} anh failed cua ${failedSessionLabel}`
+        : `Thu lai ${failedCount} anh failed`;
+    }
+
+    function resetFailedDownloads(sessionLabel = "") {
+      failedDownloadItems = [];
+      failedSessionLabel = sessionLabel;
+      updateRetryButton();
+    }
+
+    function setFailedDownloads(items, sessionLabel = failedSessionLabel) {
+      failedDownloadItems = dedupeFailedItems(items);
+      failedSessionLabel = sessionLabel;
+      updateRetryButton();
     }
 
     function setProgress(title, detail, current, total, options = {}) {
@@ -949,6 +1040,7 @@
 
       syncRefreshButtonState();
       updateQueueButton();
+      updateRetryButton();
     }
 
     function toggleAlbumSelection(albumIndex) {
@@ -1037,9 +1129,26 @@
       throw lastError || new Error("Khong tai duoc anh sau nhieu lan thu");
     }
 
+    async function resolveFailedImageForRetry(failedItem) {
+      const freshAlbum = await resolveFreshAlbum(failedItem.albumIndex);
+      const images = collectImagesFromAlbum(freshAlbum.node, null, freshAlbum.index);
+      const matchedImage = images.find((image) => image.index === failedItem.imageIndex);
+
+      if (!matchedImage) {
+        throw new Error(
+          `Khong tim thay lai anh ${failedItem.imageIndex} cua album ${failedItem.albumIndex}`
+        );
+      }
+
+      return {
+        ...matchedImage,
+        name: failedItem.name,
+      };
+    }
+
     async function downloadAlbum(album, button, progressContext = null) {
       let freshAlbum = null;
-      const failedImages = [];
+      const failedItems = [];
 
       try {
         freshAlbum = await resolveFreshAlbum(album.index);
@@ -1047,7 +1156,7 @@
         writeLog(`Khong the cap nhat lai album ${album.index}: ${error.message}`);
         setProgress("Khong the tai album", `Album ${album.index}: ${error.message}`, 0, 1);
         hideProgress(2600);
-        return;
+        return { failedItems };
       }
 
       const timestamp = Date.now();
@@ -1058,7 +1167,7 @@
         showToast(`Album ${freshAlbum.index} hien khong co anh.`, "error");
         setProgress("Album khong co anh", `Album ${freshAlbum.index} hien khong co anh.`, 0, 1);
         hideProgress(2200);
-        return;
+        return { failedItems };
       }
 
       if (button) {
@@ -1072,7 +1181,7 @@
         const albumProgressBase = progressContext.queuePosition - 1;
         setProgress(
           `Hang doi album ${progressContext.queuePosition}/${progressContext.queueTotal}`,
-          `Album ${freshAlbum.index} - dang chuan bi tai 0/${images.length} anh`,
+          `Album ${freshAlbum.index} - dang chuan bi tai 0/${images.length} anh - loi hien tai: 0`,
           albumProgressBase,
           progressContext.queueTotal,
           {
@@ -1082,7 +1191,7 @@
       } else {
         setProgress(
           `Dang tai album ${freshAlbum.index}`,
-          `Dang chuan bi tai 0/${images.length} anh`,
+          `Dang chuan bi tai 0/${images.length} anh - loi hien tai: 0`,
           0,
           images.length
         );
@@ -1098,7 +1207,7 @@
               progressContext.queuePosition - 1 + image.index / images.length;
             setProgress(
               `Hang doi album ${progressContext.queuePosition}/${progressContext.queueTotal}`,
-              `Album ${freshAlbum.index} - anh ${image.index}/${images.length}`,
+              `Album ${freshAlbum.index} - anh ${image.index}/${images.length} - loi hien tai: ${failedItems.length}`,
               queueProgress,
               progressContext.queueTotal,
               {
@@ -1108,7 +1217,7 @@
           } else {
             setProgress(
               `Dang tai album ${freshAlbum.index}`,
-              `Anh ${image.index}/${images.length}: ${image.name}`,
+              `Anh ${image.index}/${images.length}: ${image.name} - loi hien tai: ${failedItems.length}`,
               image.index,
               images.length
             );
@@ -1120,14 +1229,38 @@
         } catch (error) {
           writeLog(`Tai that bai album ${freshAlbum.index} - ${image.name}: ${error.message}`);
           showToast(`Anh ${image.index} cua album ${freshAlbum.index} loi: ${error.message}`, "error");
-          failedImages.push(image.index);
+          failedItems.push({
+            albumIndex: freshAlbum.index,
+            imageIndex: image.index,
+            name: image.name,
+          });
+          if (progressContext?.queueTotal) {
+            const queueProgress =
+              progressContext.queuePosition - 1 + image.index / images.length;
+            setProgress(
+              `Hang doi album ${progressContext.queuePosition}/${progressContext.queueTotal}`,
+              `Album ${freshAlbum.index} - anh ${image.index}/${images.length} vua loi - tong loi hien tai: ${failedItems.length}`,
+              queueProgress,
+              progressContext.queueTotal,
+              {
+                countLabel: `${progressContext.queuePosition}/${progressContext.queueTotal}`,
+              }
+            );
+          } else {
+            setProgress(
+              `Dang tai album ${freshAlbum.index}`,
+              `Anh ${image.index}/${images.length}: ${image.name} vua loi - tong loi hien tai: ${failedItems.length}`,
+              image.index,
+              images.length
+            );
+          }
         }
       }
 
       writeLog(`Hoan tat album ${freshAlbum.index}.`);
-      if (failedImages.length) {
+      if (failedItems.length) {
         showToast(
-          `Album ${freshAlbum.index} xong, ${failedImages.length} anh van loi: ${failedImages.join(", ")}.`,
+          `Album ${freshAlbum.index} xong, con ${failedItems.length} anh loi. Bam Thu lai failed de tai lai.`,
           "error",
           4200
         );
@@ -1137,8 +1270,8 @@
       if (progressContext?.queueTotal) {
         setProgress(
           `Hang doi album ${progressContext.queuePosition}/${progressContext.queueTotal}`,
-          failedImages.length
-            ? `Album ${freshAlbum.index} xong, con ${failedImages.length} anh loi`
+          failedItems.length
+            ? `Album ${freshAlbum.index} xong, con ${failedItems.length} anh loi`
             : `Da tai xong album ${freshAlbum.index}`,
           progressContext.queuePosition,
           progressContext.queueTotal,
@@ -1149,8 +1282,8 @@
       } else {
         setProgress(
           `Dang tai album ${freshAlbum.index}`,
-          failedImages.length
-            ? `Hoan tat voi ${failedImages.length} anh loi: ${failedImages.join(", ")}`
+          failedItems.length
+            ? `Hoan tat voi ${failedItems.length} anh loi. Bam Thu lai failed de tai lai.`
             : `Da tai xong album ${freshAlbum.index}`,
           images.length,
           images.length
@@ -1162,6 +1295,8 @@
         button.disabled = false;
         button.textContent = "Anh";
       }
+
+      return { failedItems };
     }
 
     async function downloadAlbumPdf(album, button) {
@@ -1292,7 +1427,9 @@
         imageButton.addEventListener("click", async (event) => {
           event.preventDefault();
           event.stopPropagation();
-          await downloadAlbum(album, imageButton);
+          resetFailedDownloads(`album ${album.index}`);
+          const result = await downloadAlbum(album, imageButton);
+          setFailedDownloads(result.failedItems, `album ${album.index}`);
         });
 
         const orderBadge = document.createElement("div");
@@ -1320,7 +1457,10 @@
         return;
       }
 
+      const sessionLabel = queue.length === 1 ? `album ${queue[0].index}` : `${queue.length} album da chon`;
+      const failedItems = [];
       isQueueDownloading = true;
+      resetFailedDownloads(sessionLabel);
       queueButton.textContent = `Hang doi 0/${queue.length}`;
       writeLog(`Bat dau tai hang doi ${queue.length} album: ${queue.map((album) => album.index).join(", ")}.`);
       setProgress("Hang doi album", `Dang chuan bi tai ${queue.length} album da chon`, 0, queue.length);
@@ -1332,12 +1472,111 @@
           queueButton.textContent = `Hang doi ${i + 1}/${queue.length}`;
           queueButton.title = `Dang tai album ${album.index} theo thu tu da chon`;
           showToast(`Dang tai album ${album.index} (${i + 1}/${queue.length})...`, "info", 1800);
-          await downloadAlbum(album, null, { queuePosition: i + 1, queueTotal: queue.length });
+          const result = await downloadAlbum(album, null, {
+            queuePosition: i + 1,
+            queueTotal: queue.length,
+          });
+          failedItems.push(...result.failedItems);
         }
 
         writeLog(`Hoan tat tai hang doi ${queue.length} album.`);
-        showToast(`Da tai xong ${queue.length} album da chon.`, "success", 3200);
-        setProgress("Hang doi album", `Da tai xong ${queue.length} album da chon`, queue.length, queue.length);
+        if (failedItems.length) {
+          showToast(
+            `Da tai xong ${queue.length} album, con ${failedItems.length} anh failed. Bam Thu lai failed de tai lai.`,
+            "error",
+            4200
+          );
+        } else {
+          showToast(`Da tai xong ${queue.length} album da chon.`, "success", 3200);
+        }
+        setProgress(
+          "Hang doi album",
+          failedItems.length
+            ? `Da tai xong ${queue.length} album, con ${failedItems.length} anh loi`
+            : `Da tai xong ${queue.length} album da chon`,
+          queue.length,
+          queue.length
+        );
+        setFailedDownloads(failedItems, sessionLabel);
+        hideProgress();
+      } finally {
+        isQueueDownloading = false;
+        updateAlbumControls();
+      }
+    }
+
+    async function retryFailedDownloads() {
+      if (isQueueDownloading) {
+        return;
+      }
+
+      const retryQueue = failedDownloadItems.map((item) => ({ ...item }));
+      if (!retryQueue.length) {
+        showToast("Khong co anh failed de thu lai.", "info");
+        return;
+      }
+
+      const retryLabel = failedSessionLabel || "anh failed";
+      const nextFailedItems = [];
+      isQueueDownloading = true;
+      resetFailedDownloads(retryLabel);
+      writeLog(`Bat dau thu lai ${retryQueue.length} anh failed.`);
+      setProgress("Thu lai anh failed", `Dang chuan bi tai lai ${retryQueue.length} anh`, 0, retryQueue.length);
+      updateAlbumControls();
+
+      try {
+        for (let i = 0; i < retryQueue.length; i += 1) {
+          const failedItem = retryQueue[i];
+          setProgress(
+            "Thu lai anh failed",
+            `Dang thu lai album ${failedItem.albumIndex} - anh ${failedItem.imageIndex}: ${failedItem.name} - con loi hien tai: ${nextFailedItems.length}`,
+            i + 1,
+            retryQueue.length
+          );
+          writeLog(
+            `Dang thu lai album ${failedItem.albumIndex} - anh ${failedItem.imageIndex}: ${failedItem.name}`
+          );
+
+          try {
+            const retryImage = await resolveFailedImageForRetry(failedItem);
+            await downloadImageWithRetry(retryImage, retryImage.albumIndex);
+          } catch (error) {
+            nextFailedItems.push(failedItem);
+            writeLog(
+              `Thu lai that bai album ${failedItem.albumIndex} - ${failedItem.name}: ${error.message}`
+            );
+            showToast(
+              `Thu lai anh ${failedItem.imageIndex} cua album ${failedItem.albumIndex} loi: ${error.message}`,
+              "error",
+              3200
+            );
+            setProgress(
+              "Thu lai anh failed",
+              `Thu lai album ${failedItem.albumIndex} - anh ${failedItem.imageIndex} van loi - con loi hien tai: ${nextFailedItems.length}`,
+              i + 1,
+              retryQueue.length
+            );
+          }
+        }
+
+        if (nextFailedItems.length) {
+          showToast(
+            `Thu lai xong, con ${nextFailedItems.length} anh failed. Ban co the bam Thu lai failed them.`,
+            "error",
+            4200
+          );
+        } else {
+          showToast("Da tai lai thanh cong tat ca anh failed.", "success", 3200);
+        }
+        setProgress(
+          "Thu lai anh failed",
+          nextFailedItems.length
+            ? `Thu lai xong, con ${nextFailedItems.length} anh loi`
+            : "Da tai lai thanh cong tat ca anh failed",
+          retryQueue.length,
+          retryQueue.length
+        );
+        setFailedDownloads(nextFailedItems, retryLabel);
         hideProgress();
       } finally {
         isQueueDownloading = false;
@@ -1399,11 +1638,17 @@
       await downloadSelectedAlbums();
     });
 
+    retryButton.addEventListener("click", async () => {
+      await retryFailedDownloads();
+    });
+
     document.body.appendChild(refreshButton);
     document.body.appendChild(queueButton);
+    document.body.appendChild(retryButton);
     document.body.appendChild(progressPanel);
     document.body.appendChild(toastContainer);
     updateQueueButton();
+    updateRetryButton();
     syncRefreshButtonState();
     refreshAlbums();
   }
