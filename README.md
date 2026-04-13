@@ -10,12 +10,12 @@
 3. Enable Tampermonkey
 
    1. For Microsoft Edge, open `edge://extensions/`
-      1. Click Enable Developer Mode ![Enable Developer Mode](./images/enable_developer_mode.png)
+      1. Click Enable Developer Mode ![Enable Developer Mode](./images/edge_developer_mode.png)
       2. Go to [Tampermonkey Edge Extension](edge://extensions/?id=dhdgffkkebhmkfjojejmpbldmpobfkfo)
       3. Click "Allow User Scripts" ![Allow User Scripts](./images/edge_tempermonky_allow_user_scripts.png)
       4. Done
    2. For Google Chrome, open `chrome://extensions/`
-      1. Click Enable Developer Mode ![Enable Developer Mode](./images/enable_developer_mode.png)
+      1. Click Enable Developer Mode ![Enable Developer Mode](./images/chrome_developer_mode.png)
       2. Go to [Tampermonkey Chrome Extension](chrome://extensions/?id=dhdgffkkebhmkfjojejmpbldmpobfkfo)
       3. Click "Allow User Scripts" ![Allow User Scripts](./images/chrome_tempermonky_allow_user_scripts.png)
       4. Done
