@@ -28,7 +28,7 @@
 
 ## MacOS (MacBook)
 1. [Download App](https://github.com/NguyenKz/image_to_pdf/blob/main/releases/App.zip)
-2. Click "Download" Download
-3. Unzip the file
+2. Click "Download" Download ![Download](./images/download_app.png)
+3. Unzip the file ![Unzip](./images/unzip.png)
 4. Run the app
 5. Done
