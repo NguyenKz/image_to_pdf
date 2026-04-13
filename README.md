@@ -2,26 +2,33 @@
 
 ## Install Tampermonkey
 
-1. Download Tampermonkey from [Tampermonkey Chrome Web Store](https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo) 
-   - ![Tampermonkey Chrome Web Store](./images/tampermonkey_chrome_web_store.png)
-   - ![Tampermonkey Chrome Web Store](./images/tampermonkey_chrome_web_store_chrome.png)
-
+1. Download Tampermonkey from [Tampermonkey Chrome Web Store](https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo)
+  - Tampermonkey Chrome Web Store
+  - Tampermonkey Chrome Web Store
 2. Install Tampermonkey
 3. Enable Tampermonkey
-
-   1. For Microsoft Edge, open `edge://extensions/`
-      1. Click Enable Developer Mode ![Enable Developer Mode](./images/edge_developer_mode.png)
-      2. Go to [Tampermonkey Edge Extension](edge://extensions/?id=dhdgffkkebhmkfjojejmpbldmpobfkfo)
-      3. Click "Allow User Scripts" ![Allow User Scripts](./images/edge_tempermonky_allow_user_scripts.png)
-      4. Done
-   2. For Google Chrome, open `chrome://extensions/`
-      1. Click Enable Developer Mode ![Enable Developer Mode](./images/chrome_developer_mode.png)
-      2. Go to [Tampermonkey Chrome Extension](chrome://extensions/?id=dhdgffkkebhmkfjojejmpbldmpobfkfo)
-      3. Click "Allow User Scripts" ![Allow User Scripts](./images/chrome_tempermonky_allow_user_scripts.png)
-      4. Done
+  1. For Microsoft Edge, open `edge://extensions/`
+    1. Click Enable Developer Mode Enable Developer Mode
+    2. Go to [Tampermonkey Edge Extension](edge://extensions/?id=dhdgffkkebhmkfjojejmpbldmpobfkfo)
+    3. Click "Allow User Scripts" Allow User Scripts
+    4. Done
+  2. For Google Chrome, open `chrome://extensions/`
+    1. Click Enable Developer Mode Enable Developer Mode
+    2. Go to [Tampermonkey Chrome Extension](chrome://extensions/?id=dhdgffkkebhmkfjojejmpbldmpobfkfo)
+    3. Click "Allow User Scripts" Allow User Scripts
+    4. Done
 
 ## Install userscript
 
 1. Open [Download Zalo Album userscript](https://raw.githubusercontent.com/NguyenKz/image_to_pdf/main/dowload_zalo_album.user.js)
-2. Click "Install" or "ReInstall" ![Install](./images/tampermonkey_install.png)
+2. Click "Install" or "ReInstall" Install
 3. Done
+
+# How to Make PDF from images
+
+## MacOS (MacBook)
+1. [Download App](https://github.com/NguyenKz/image_to_pdf/blob/main/releases/App.zip)
+2. Click "Download" Download
+3. Unzip the file
+4. Run the app
+5. Done
