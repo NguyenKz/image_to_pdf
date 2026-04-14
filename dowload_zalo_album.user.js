@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Zalo Chat XPath Image Downloader
 // @namespace    https://chat.zalo.me/
-// @version      1.0.4
+// @version      1.0.5
 // @description  Nhap XPath, dem anh va tai anh theo thu tu tren Zalo Chat
 // @author       GPT
 // @match        https://chat.zalo.me/*
@@ -50,6 +50,10 @@
 
   function buildPdfFileName(timestamp, albumIndex) {
     return `${timestamp}_album-${padAlbumIndex(albumIndex)}.pdf`;
+  }
+
+  function buildImageBadgeKey(albumIndex, imageIndex) {
+    return `${albumIndex}:${imageIndex}`;
   }
 
   function normalizeUrl(url) {
@@ -243,7 +247,7 @@
       await sleep(intervalMs);
     }
 
-      throw new Error("Hết thời gian chờ ảnh gốc hiển thị");
+    throw new Error("Hết thời gian chờ ảnh gốc hiển thị");
   }
 
   async function waitForViewerImageByBaseId(baseId, timeoutMs = 8000) {
@@ -275,6 +279,19 @@
         bubbles: true,
       })
     );
+  }
+
+  async function scrollAlbumIntoView(albumNode) {
+    if (!(albumNode instanceof HTMLElement)) {
+      return;
+    }
+
+    albumNode.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+      inline: "nearest",
+    });
+    await sleep(450);
   }
 
   async function openFullImageFromThumbnail(image) {
@@ -708,6 +725,9 @@
         left: 8px;
         bottom: 8px;
         z-index: 999997;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
         padding: 4px 8px;
         border: 1px solid rgba(255, 255, 255, 0.18);
         border-radius: 999px;
@@ -720,6 +740,40 @@
         letter-spacing: 0.02em;
         box-shadow: 0 8px 20px rgba(15, 23, 42, 0.24);
         pointer-events: none;
+      }
+
+      .tm-zalo-image-status-icon {
+        display: none;
+        align-items: center;
+        justify-content: center;
+        width: 16px;
+        height: 16px;
+        border-radius: 999px;
+        color: #ffffff;
+        font-size: 10px;
+        font-weight: 900;
+        line-height: 1;
+      }
+
+      .tm-zalo-image-index-badge[data-status="pending"] .tm-zalo-image-status-icon,
+      .tm-zalo-image-index-badge[data-status="done"] .tm-zalo-image-status-icon,
+      .tm-zalo-image-index-badge[data-status="failed"] .tm-zalo-image-status-icon {
+        display: inline-flex;
+      }
+
+      .tm-zalo-image-index-badge[data-status="pending"] .tm-zalo-image-status-icon {
+        background: rgba(59, 130, 246, 0.96);
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14);
+      }
+
+      .tm-zalo-image-index-badge[data-status="done"] .tm-zalo-image-status-icon {
+        background: rgba(34, 197, 94, 0.96);
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14);
+      }
+
+      .tm-zalo-image-index-badge[data-status="failed"] .tm-zalo-image-status-icon {
+        background: rgba(220, 38, 38, 0.96);
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14);
       }
 
       #${TOAST_CONTAINER_ID} {
@@ -873,6 +927,7 @@
     let failedDownloadItems = [];
     let failedSessionLabel = "";
     const albumControls = new Map();
+    const imageBadgeMap = new Map();
     const progressTitleNode = progressPanel.querySelector(".tm-zalo-progress-title");
     const progressDetailNode = progressPanel.querySelector(".tm-zalo-progress-detail");
     const progressCountNode = progressPanel.querySelector(".tm-zalo-progress-count");
@@ -906,6 +961,62 @@
 
     function buildFailedItemKey(item) {
       return `${item.albumIndex}:${item.imageIndex}:${item.name}`;
+    }
+
+    function setImageBadgeState(albumIndex, imageIndex, state = "") {
+      const badge = imageBadgeMap.get(buildImageBadgeKey(albumIndex, imageIndex));
+      if (!badge) {
+        return;
+      }
+
+      const iconNode = badge.querySelector(".tm-zalo-image-status-icon");
+      badge.dataset.status = state || "";
+
+      if (!iconNode) {
+        return;
+      }
+
+      if (state === "pending") {
+        iconNode.textContent = "…";
+      } else if (state === "done") {
+        iconNode.textContent = "✓";
+      } else if (state === "failed") {
+        iconNode.textContent = "✕";
+      } else {
+        iconNode.textContent = "";
+      }
+    }
+
+    function clearImageBadgeStates() {
+      imageBadgeMap.forEach((_, key) => {
+        const [albumIndex, imageIndex] = key.split(":").map(Number);
+        setImageBadgeState(albumIndex, imageIndex, "");
+      });
+    }
+
+    function clearAlbumImageBadgeStates(albumIndex) {
+      imageBadgeMap.forEach((_, key) => {
+        const [currentAlbumIndex, imageIndex] = key.split(":").map(Number);
+        if (currentAlbumIndex === albumIndex) {
+          setImageBadgeState(albumIndex, imageIndex, "");
+        }
+      });
+    }
+
+    function markAlbumImagesPending(album) {
+      if (!album?.images?.length) {
+        return;
+      }
+
+      album.images.forEach((image) => {
+        setImageBadgeState(album.index, image.index, "pending");
+      });
+    }
+
+    function markRetryQueuePending(items) {
+      items.forEach((item) => {
+        setImageBadgeState(item.albumIndex, item.imageIndex, "pending");
+      });
     }
 
     function dedupeFailedItems(items) {
@@ -1142,6 +1253,7 @@
 
       return {
         ...matchedImage,
+        albumNode: freshAlbum.node,
         name: failedItem.name,
       };
     }
@@ -1152,7 +1264,9 @@
 
       try {
         freshAlbum = await resolveFreshAlbum(album.index);
+        await scrollAlbumIntoView(freshAlbum.node);
       } catch (error) {
+        clearAlbumImageBadgeStates(album.index);
         writeLog(`Không thể cập nhật lại album ${album.index}: ${error.message}`);
         setProgress("Không thể tải album", `Album ${album.index}: ${error.message}`, 0, 1);
         hideProgress(2600);
@@ -1163,6 +1277,7 @@
       const images = collectImagesFromAlbum(freshAlbum.node, timestamp, freshAlbum.index);
 
       if (!images.length) {
+        clearAlbumImageBadgeStates(freshAlbum.index);
         writeLog(`Album ${freshAlbum.index} hiện không có ảnh. Hãy bấm Làm mới rồi thử lại.`);
         showToast(`Album ${freshAlbum.index} hiện không có ảnh.`, "error");
         setProgress("Album không có ảnh", `Album ${freshAlbum.index} hiện không có ảnh.`, 0, 1);
@@ -1226,7 +1341,9 @@
             `Đang tải album ${freshAlbum.index} - ${image.index}/${images.length}: ${image.name}`
           );
           await downloadImageWithRetry(image, freshAlbum.index);
+          setImageBadgeState(freshAlbum.index, image.index, "done");
         } catch (error) {
+          setImageBadgeState(freshAlbum.index, image.index, "failed");
           writeLog(`Tải thất bại album ${freshAlbum.index} - ${image.name}: ${error.message}`);
           showToast(`Ảnh ${image.index} của album ${freshAlbum.index} bị lỗi: ${error.message}`, "error");
           failedItems.push({
@@ -1304,6 +1421,7 @@
 
       try {
         freshAlbum = await resolveFreshAlbum(album.index);
+        await scrollAlbumIntoView(freshAlbum.node);
       } catch (error) {
         writeLog(`Không thể cập nhật lại album ${album.index}: ${error.message}`);
         return;
@@ -1362,6 +1480,7 @@
     }
 
     function clearInjectedImageBadges() {
+      imageBadgeMap.clear();
       document.querySelectorAll(".tm-zalo-image-index-badge").forEach((badge) => {
         badge.remove();
       });
@@ -1385,10 +1504,20 @@
 
           const badge = document.createElement("div");
           badge.className = "tm-zalo-image-index-badge";
-          badge.textContent = `ab ${padAlbumIndex(album.index)} - ${padOverlayImageIndex(
+          badge.dataset.status = "";
+
+          const statusIcon = document.createElement("span");
+          statusIcon.className = "tm-zalo-image-status-icon";
+
+          const label = document.createElement("span");
+          label.textContent = `ab ${padAlbumIndex(album.index)} - ${padOverlayImageIndex(
             imageIndex + 1
           )}`;
+
+          badge.appendChild(statusIcon);
+          badge.appendChild(label);
           hostNode.appendChild(badge);
+          imageBadgeMap.set(buildImageBadgeKey(album.index, imageIndex + 1), badge);
         });
       });
     }
@@ -1427,6 +1556,8 @@
         imageButton.addEventListener("click", async (event) => {
           event.preventDefault();
           event.stopPropagation();
+          clearImageBadgeStates();
+          markAlbumImagesPending(album);
           resetFailedDownloads(`album ${album.index}`);
           const result = await downloadAlbum(album, imageButton);
           setFailedDownloads(result.failedItems, `album ${album.index}`);
@@ -1460,6 +1591,11 @@
       const sessionLabel = queue.length === 1 ? `album ${queue[0].index}` : `${queue.length} album đã chọn`;
       const failedItems = [];
       isQueueDownloading = true;
+      clearImageBadgeStates();
+      queue.forEach((queueAlbum) => {
+        const latestAlbum = latestAlbums.find((item) => item.index === queueAlbum.index);
+        markAlbumImagesPending(latestAlbum);
+      });
       resetFailedDownloads(sessionLabel);
       queueButton.textContent = `Hàng đợi 0/${queue.length}`;
       writeLog(`Bắt đầu tải hàng đợi ${queue.length} album: ${queue.map((album) => album.index).join(", ")}.`);
@@ -1519,6 +1655,8 @@
       const retryLabel = failedSessionLabel || "ảnh lỗi";
       const nextFailedItems = [];
       isQueueDownloading = true;
+      clearImageBadgeStates();
+      markRetryQueuePending(retryQueue);
       resetFailedDownloads(retryLabel);
       writeLog(`Bắt đầu tải lại ${retryQueue.length} ảnh lỗi.`);
       setProgress("Tải lại ảnh lỗi", `Đang chuẩn bị tải lại ${retryQueue.length} ảnh`, 0, retryQueue.length);
@@ -1539,8 +1677,11 @@
 
           try {
             const retryImage = await resolveFailedImageForRetry(failedItem);
+            await scrollAlbumIntoView(retryImage.albumNode);
             await downloadImageWithRetry(retryImage, retryImage.albumIndex);
+            setImageBadgeState(retryImage.albumIndex, retryImage.index, "done");
           } catch (error) {
+            setImageBadgeState(failedItem.albumIndex, failedItem.imageIndex, "failed");
             nextFailedItems.push(failedItem);
             writeLog(
               `Tải lại thất bại album ${failedItem.albumIndex} - ${failedItem.name}: ${error.message}`
@@ -1596,6 +1737,7 @@
 
       try {
         await sleep(500);
+        clearImageBadgeStates();
         const albums = collectAlbums(xpath);
         const totalImages = albums.reduce((sum, album) => sum + album.images.length, 0);
         trimSelectedAlbums(albums);
